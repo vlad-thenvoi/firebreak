@@ -9,7 +9,7 @@ import {
 } from "@firebreak/engine";
 import type { MessageView } from "./timeline";
 
-const TILE: Record<TileKind, string> = {
+export const TILE_COLOR: Record<TileKind, string> = {
   grass: "#9dbb6f",
   forest: "#4f7a45",
   house: "#b58a5e",
@@ -87,7 +87,7 @@ export function drawBoard(ctx: CanvasRenderingContext2D, g: BoardGeometry, d: Dr
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
       const k = cur.tiles[y * S + x]!;
-      ctx.fillStyle = TILE[k];
+      ctx.fillStyle = TILE_COLOR[k];
       ctx.fillRect(px(x), py(y), c + 0.5, c + 0.5);
       if (k === "forest") {
         ctx.fillStyle = "#3d6436";

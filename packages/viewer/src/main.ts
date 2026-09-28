@@ -1,5 +1,6 @@
 import type { MatchHeader, RecordingBundle, StreamFrame } from "@firebreak/engine";
 import { Player } from "./player";
+import { renderRulesPage, rulesHref } from "./reference";
 import "./style.css";
 import { Timeline } from "./timeline";
 
@@ -58,6 +59,7 @@ function live() {
 async function index() {
   app.innerHTML = `<div class="index"><h1>FIRE<span style="color:var(--accent)">BREAK</span></h1>
     <div class="meta">Teams of AI agents fight the same wildfire. The only difference is how they communicate.</div>
+    <p class="index-nav"><a href="${rulesHref()}">Rules and map legend</a></p>
     <div id="live-slot"></div><div id="list" class="empty">Loading recordings…</div></div>`;
   try {
     const status = (await (await fetch("/api/live/status")).json()) as {
@@ -101,6 +103,7 @@ async function index() {
 }
 
 async function boot() {
+  if (params.has("rules")) return renderRulesPage(app);
   if (window.__FIREBREAK_BUNDLE__) return play(window.__FIREBREAK_BUNDLE__);
   const rec = params.get("rec");
   if (rec) {

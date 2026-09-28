@@ -1,4 +1,5 @@
 import { formatOrder, type LlmFrame } from "@firebreak/engine";
+import { compactRoleLegend, createLegendDialog, rulesHref } from "./reference";
 import { HQ_ID, drawBoard, type HitTarget } from "./render";
 import type { Timeline, WorldTimeline } from "./timeline";
 
@@ -54,6 +55,7 @@ export class Player {
   private inspectorKey = "";
   private lastFrame = performance.now();
   private badge!: HTMLElement;
+  private legend!: HTMLDialogElement;
 
   constructor(
     private root: HTMLElement,
@@ -88,7 +90,14 @@ export class Player {
       `seed ${h.seed} · ${h.ticks} ticks × ${h.tick_ms / 1000}s · ${h.match_id}`,
     );
     const toggles = el("div", "toggles");
-    top.append(brand, this.badge, meta, el("div", "spacer"), toggles);
+    const help = el("div", "help-links");
+    const legendButton = el("button", "top-action", "Legend");
+    legendButton.title = "Map legend (L)";
+    legendButton.addEventListener("click", () => this.legend.showModal());
+    const rules = el("a", "top-action", "Rules");
+    rules.href = rulesHref();
+    help.append(legendButton, rules);
+    top.append(brand, this.badge, meta, compactRoleLegend(), el("div", "spacer"), help, toggles);
 
     const main = el("div", "main");
     this.boardsEl = el("div", "boards");
@@ -175,7 +184,8 @@ export class Player {
       controls.append(liveBtn);
     }
 
-    shell.append(top, main, controls);
+    this.legend = createLegendDialog();
+    shell.append(top, main, controls, this.legend);
     this.root.replaceChildren(shell);
     this.setSpeed(1);
     requestAnimationFrame(() => this.layout());
@@ -250,6 +260,7 @@ export class Player {
     } else if (e.key === "ArrowRight") this.stepTick(1);
     else if (e.key === "ArrowLeft") this.stepTick(-1);
     else if (e.key >= "1" && e.key <= "5") this.setSpeed(SPEEDS[Number(e.key) - 1]!);
+    else if (e.key.toLowerCase() === "l" && !this.legend.open) this.legend.showModal();
     else if (e.key === "Escape") this.closeInspector();
   }
 
