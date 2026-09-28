@@ -322,12 +322,12 @@ The viewer only ever consumes an **event stream**. Live mode is a websocket that
 
 ## 9. Viewer
 
-- **Layout:** a grid of boards, one per team (2×2 for four teams, 3×2 with the reference teams), each labelled with team name and live score.
+- **Layout:** a responsive grid of boards, one per team, each labelled with team name and live score. Column count follows available width rather than a fixed team count.
 - **Board:** the tile map, fire intensity, agents as role icons, civilians with countdown rings, and fog of war shaded by the team's combined vision.
 - **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms).
 - **Counters** under each board: score, $ spent, messages, stale actions, idle ticks, uncovered intensity-3 fire-ticks.
 - **Inspector:** click an agent to see its latest observation, its prompt's message window, and its last LLM response.
-- **Controls:** play/pause, speed (0.5–10×), timeline scrubber with event markers, step ±1 tick, choose which teams are shown.
+- **Controls:** play/pause, speed (0.5–10×), timeline scrubber with event markers, step ±1 tick, choose which teams are shown, and persistent visibility switches for mission stats, operational stats, messages, AI commentary, and the comparison chart.
 - Stack: Vite + TypeScript + Canvas 2D (six 20×20 boards are far below what needs WebGL). The build is one self-contained `index.html`, which the server serves and `export` embeds a recording into.
 - URL parameters: `?rec=<file>`, `?live`, `?t=<seconds>`, `?paused`, `?speed=<n>`.
 

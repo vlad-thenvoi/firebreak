@@ -35,7 +35,7 @@ Run all four before committing. Tests never call a model or Band.
 A recording (`*.sqlite`) is the source of truth for anything that happened in a match. To answer a question about a match, read the recording rather than re-running it: runs cost model usage and are not reproducible (LLMs are not deterministic, only the engine is).
 
 - `pnpm firebreak list` finds recordings in `runs/` and `recordings/`; commands accept a path or a file name.
-- `pnpm firebreak metrics <match>` prints per-team metrics as JSON (score, relative score, cost, latency, idle agent-ticks, stale actions, missed joint tasks, noise, forecast lead...). Definitions: SPEC §10, code: `packages/recorder/src/metrics.ts`.
+- `pnpm firebreak metrics <match>` prints per-team metrics as JSON (score, relative score, cost, latency, idle agent-ticks, stale actions, uncovered intensity-3 fire-ticks, noise, forecast lead...). Definitions: SPEC §10, code: `packages/recorder/src/metrics.ts`.
 - `pnpm firebreak report <files...>` aggregates several matches into HTML (mean ± sd). Only compare matches from the same prompt version and LLM backend.
 - `pnpm firebreak verify <match>` re-runs the engine from the seed and recorded orders and compares every tick hash. Run it after any engine change on an old recording to see whether rules changed outcomes.
 - Query with `sqlite3`. Tables: `match`, `match_config`, `world`, `tick_state`, `event`, `message`, `delivery`, `llm_call` (schema: `packages/recorder/src/schema.ts`; examples in README). World ids are `w<N>-<team>`; agent ids `scout`, `ff1`, `ff2`, `engineer`, `rescuer`, `orchestrator`.
@@ -51,6 +51,12 @@ These are the point of the project (SPEC §2, §5). Breaking them makes results 
 - **Faithful setups.** Each team uses its tool the way people really do. Don't weaken a competitor to make Band win, and document any behaviour change in `docs/TUNING.md` with before/after numbers.
 - **Determinism.** The engine must stay pure: no `Math.random`, no clock, no I/O. Randomness goes through `roll(seed, tick, x, y, purpose)` so every world gets the same luck per tile and tick. `pnpm test` checks this.
 - **Version bumps.** Bump `ENGINE_VERSION` (`packages/engine/src/index.ts`) when rules change outcomes, and `PROMPT_VERSION` (`packages/runtime/src/agent/prompts.ts`) when prompts change. Both are recorded with every match.
+
+## Documentation discipline
+
+- **Update `CHANGELOG.md` in the same change for every user-visible feature, behavior/default change, metric semantic change, backend change, or replay/UI change. This is required, not optional cleanup.**
+- Keep `README.md` aligned with the current setup and user workflow, `docs/SPEC.md` aligned with normative behavior and metric definitions, and `docs/TUNING.md` aligned with measured behavior changes and comparison caveats.
+- Historical recordings are immutable. Document how new readers or metrics interpret them instead of rewriting them.
 
 ## Running matches
 

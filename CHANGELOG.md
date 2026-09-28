@@ -17,6 +17,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Added per-team mission-outcome counters and an outcome-over-time replay chart with metric and communication-style toggles.
 - Added paired advanced-model comparison notes and reports for Claude and OpenAI runs.
 - Added a replay-visible sub-agent lifecycle configurator that produces the exact next-run override.
+- Added persistent View controls for mission stats, operational stats, team messages, AI commentary, and the comparison chart.
 
 ### Changed
 
@@ -28,6 +29,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Made sub-agents task-lived by default: they retain one assignment, accumulated sightings, and order history until they report completion or blockage. The former eight-tick cutoff remains an opt-in setting.
 - Added total/current/remaining tick information to every gameplay agent's system instructions and clarified the visibility, spread risk, and response priority of fire intensity.
 - Replaced the narrow “missed joint” counter with uncovered intensity-3 fire-ticks, which includes ignored and singly assigned joint fires.
+- Reworked the replay grid to size boards from available width instead of fixed panel-height estimates, and made statistic labels wrap into responsive three- or six-column layouts.
 
 ### Fairness and security
 

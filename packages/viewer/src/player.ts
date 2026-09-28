@@ -2,6 +2,7 @@ import { formatOrder, type LlmFrame } from "@firebreak/engine";
 import { compactRoleLegend, createLegendDialog, rulesHref } from "./reference";
 import { HQ_ID, drawBoard, type HitTarget } from "./render";
 import type { OutcomeMetric, Timeline, WorldTimeline } from "./timeline";
+import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from "./preferences";
 
 const SPEEDS = [0.5, 1, 2, 4, 10];
 const TIMELINE_MARKERS = {
@@ -67,6 +68,7 @@ export class Player {
   private liveOffset: number | null = null;
   private lastVersion = -1;
   private cards: Card[] = [];
+  private shell!: HTMLElement;
   private boardsEl!: HTMLElement;
   private scrub!: HTMLInputElement;
   private scrubMarks!: HTMLCanvasElement;
@@ -81,6 +83,8 @@ export class Player {
   private legend!: HTMLDialogElement;
   private broadcastDialog!: HTMLDialogElement;
   private subagentDialog!: HTMLDialogElement;
+  private viewDialog!: HTMLDialogElement;
+  private viewPreferences: ViewPreferences = loadViewPreferences();
   private chartCanvas!: HTMLCanvasElement;
   private chartValues!: HTMLElement;
   private chartMetric: OutcomeMetric = "score";
@@ -116,6 +120,7 @@ export class Player {
   private build() {
     const h = this.tl.header;
     const shell = el("div", "shell");
+    this.shell = shell;
     const top = el("div", "topbar");
     const brand = el("div", "brand");
     brand.innerHTML = "FIRE<span>BREAK</span>";
@@ -132,10 +137,13 @@ export class Player {
     legendButton.addEventListener("click", () => this.legend.showModal());
     const rules = el("a", "top-action", "Rules");
     rules.href = rulesHref();
+    const viewButton = el("button", "top-action", "View");
+    viewButton.title = "Show or hide replay panels";
+    viewButton.addEventListener("click", () => this.viewDialog.showModal());
     const subagentsButton = el("button", "top-action", "Sub-agents");
     subagentsButton.title = "View this replay's sub-agent lifecycle and configure the next run";
     subagentsButton.addEventListener("click", () => this.subagentDialog.showModal());
-    help.append(legendButton, rules, subagentsButton);
+    help.append(viewButton, legendButton, rules, subagentsButton);
     top.append(brand, this.badge, meta, compactRoleLegend(), el("div", "spacer"), help, toggles);
 
     const main = el("div", "main");
@@ -250,14 +258,116 @@ export class Player {
     }
 
     this.legend = createLegendDialog();
+    this.viewDialog = this.createViewDialog();
     this.subagentDialog = this.createSubagentDialog();
     this.broadcastDialog = el("dialog", "broadcast-dialog") as HTMLDialogElement;
     this.broadcastDialog.addEventListener("click", (event) => {
       if (event.target === this.broadcastDialog) this.broadcastDialog.close();
     });
-    shell.append(top, main, controls, this.legend, this.subagentDialog, this.broadcastDialog);
+    shell.append(
+      top,
+      main,
+      controls,
+      this.viewDialog,
+      this.legend,
+      this.subagentDialog,
+      this.broadcastDialog,
+    );
     this.root.replaceChildren(shell);
+    this.applyViewPreferences(false);
     this.setSpeed(1);
+    requestAnimationFrame(() => this.layout());
+  }
+
+  private createViewDialog(): HTMLDialogElement {
+    const dialog = el("dialog", "legend-dialog view-dialog") as HTMLDialogElement;
+    const closeForm = el("form") as HTMLFormElement;
+    closeForm.method = "dialog";
+    const close = el("button", "dialog-close", "×");
+    close.setAttribute("aria-label", "Close view settings");
+    closeForm.append(close);
+    const options = el("div", "view-options");
+    const definitions: { key: keyof ViewPreferences; label: string; detail: string }[] = [
+      {
+        key: "missionStats",
+        label: "Mission outcomes",
+        detail: "Civilians, fires, and houses with their score effects",
+      },
+      {
+        key: "operationalStats",
+        label: "Operational stats",
+        detail: "Cost, model calls, messages, stale actions, idle time, and uncovered I3 fires",
+      },
+      {
+        key: "messages",
+        label: "Team messages",
+        detail: "The latest communication sent by each team",
+      },
+      {
+        key: "commentary",
+        label: "AI commentary",
+        detail: "Human-readable omniscient broadcast under each team",
+      },
+      {
+        key: "comparisonChart",
+        label: "Outcome chart",
+        detail: "The cross-team timeline and its metric controls",
+      },
+    ];
+    for (const definition of definitions) {
+      const label = el("label");
+      const checkbox = el("input") as HTMLInputElement;
+      checkbox.type = "checkbox";
+      checkbox.checked = this.viewPreferences[definition.key];
+      const copy = el("span");
+      copy.append(el("b", "", definition.label), el("small", "", definition.detail));
+      label.append(checkbox, copy);
+      checkbox.addEventListener("change", () => {
+        this.viewPreferences[definition.key] = checkbox.checked;
+        this.applyViewPreferences();
+      });
+      options.append(label);
+    }
+    const reset = el("button", "top-action", "Show everything");
+    reset.type = "button";
+    reset.addEventListener("click", () => {
+      this.viewPreferences = {
+        missionStats: true,
+        operationalStats: true,
+        messages: true,
+        commentary: true,
+        comparisonChart: true,
+      };
+      for (const input of Array.from(options.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')))
+        input.checked = true;
+      this.applyViewPreferences();
+    });
+    dialog.append(
+      closeForm,
+      el("div", "eyebrow", "Persistent display preferences"),
+      el("h2", "", "Replay panels"),
+      el(
+        "p",
+        "meta",
+        "Changes apply immediately and are remembered for the next recording you open in this browser.",
+      ),
+      options,
+      reset,
+    );
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    return dialog;
+  }
+
+  private applyViewPreferences(persist = true) {
+    const p = this.viewPreferences;
+    this.shell.classList.toggle("hide-mission-stats", !p.missionStats);
+    this.shell.classList.toggle("hide-operational-stats", !p.operationalStats);
+    this.shell.classList.toggle("hide-messages", !p.messages);
+    this.shell.classList.toggle("hide-commentary", !p.commentary);
+    this.shell.classList.toggle("hide-comparison-chart", !p.comparisonChart);
+    if (persist) saveViewPreferences(p);
     requestAnimationFrame(() => this.layout());
   }
 
@@ -406,21 +516,12 @@ export class Player {
     const n = Math.max(1, visible.length);
     const box = this.boardsEl.getBoundingClientRect();
     const W = box.width - 24;
-    const H = box.height - 24;
-    const chrome = 425; // card header + outcomes + counters + message ticker + broadcast booth
-    let best = { cols: 1, size: 0 };
-    for (let cols = 1; cols <= n; cols++) {
-      const rows = Math.ceil(n / cols);
-      const size = Math.floor(Math.min((W - (cols - 1) * 12) / cols, (H - (rows - 1) * 12) / rows - chrome));
-      // Prefer the squarer grid unless a wider one gives clearly bigger boards (it fills the screen better).
-      if (size > best.size * 1.05 || (best.size === 0 && size > 0)) best = { cols, size };
-    }
-    const size = Math.max(220, best.size);
-    this.boardsEl.style.gridTemplateColumns = `repeat(${best.cols}, ${size}px)`;
+    const cardMinimum = W >= 1_600 ? 330 : W >= 900 ? 300 : 260;
+    const cols = this.focused ? 1 : Math.max(1, Math.min(n, Math.floor((W + 12) / (cardMinimum + 12))));
+    this.boardsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     const dpr = window.devicePixelRatio || 1;
     for (const c of this.cards) {
-      c.canvas.style.width = `${size}px`;
-      c.canvas.style.height = `${size}px`;
+      const size = Math.max(1, c.root.getBoundingClientRect().width);
       c.canvas.width = Math.round(size * dpr);
       c.canvas.height = Math.round(size * dpr);
     }

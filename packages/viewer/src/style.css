@@ -172,6 +172,9 @@ a {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  align-self: start;
+  container-type: inline-size;
 }
 .card.leader {
   border-color: var(--accent);
@@ -199,6 +202,9 @@ a {
 }
 .card canvas {
   display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
   cursor: pointer;
 }
 .outcomes {
@@ -222,12 +228,10 @@ a {
   font-size: 15px;
 }
 .outcome span {
-  overflow: hidden;
   color: var(--muted);
-  font-size: 9px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 .outcome.good b {
   color: var(--good);
@@ -255,7 +259,9 @@ a {
 .counter span {
   color: var(--muted);
   font-size: 11px;
-  white-space: nowrap;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .ticker {
   height: 56px;
@@ -273,6 +279,34 @@ a {
 .ticker b {
   color: var(--accent-2);
   font-weight: 600;
+}
+
+.hide-mission-stats .outcomes,
+.hide-operational-stats .counters,
+.hide-messages .ticker,
+.hide-commentary .commentary,
+.hide-comparison-chart .outcome-chart {
+  display: none;
+}
+
+@container (max-width: 480px) {
+  .outcomes,
+  .counters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 8px;
+  }
+}
+
+@container (max-width: 310px) {
+  .card-head .team {
+    display: none;
+  }
+  .card-head .label {
+    font-size: 13px;
+  }
+  .card-head .score {
+    font-size: 22px;
+  }
 }
 
 .outcome-chart {
@@ -690,6 +724,40 @@ a {
 }
 .legend-dialog h2 {
   margin: 0 0 18px;
+}
+.view-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+.view-dialog h2 {
+  margin-bottom: 8px;
+}
+.view-options {
+  display: grid;
+  gap: 7px;
+  margin: 18px 0;
+}
+.view-options label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+  cursor: pointer;
+}
+.view-options label:hover {
+  border-color: var(--muted);
+}
+.view-options span,
+.view-options b,
+.view-options small {
+  display: block;
+}
+.view-options small {
+  margin-top: 2px;
+  color: var(--muted);
 }
 .subagent-dialog {
   width: min(650px, calc(100vw - 32px));
