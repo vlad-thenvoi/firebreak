@@ -18,7 +18,7 @@ import {
   type Transport,
   type WorldHandle,
 } from "@firebreak/runtime";
-import { PeerTeam, SubagentTeam, botsNone, botsPerfect } from "@firebreak/teams";
+import { PeerTeam, SubagentTeam, botsNone, botsPerfect, chatBroadcast, chatMentions } from "@firebreak/teams";
 import { z } from "zod";
 import { verifyRecording } from "../src/verify";
 
@@ -50,8 +50,14 @@ class FakeLlm implements LlmClient {
       await call("finish", { report: "done exploring" });
     } else {
       await call("move_to", { x: 10, y: 1 });
-      if (names.has("send_message") && tick === 0)
-        await call("send_message", { to: "all", text: "heading north" });
+      if (names.has("send_message") && tick === 0) {
+        const self = /YOU: ([^.]+)/.exec(req.system)?.[1] ?? "scout";
+        await call("send_message", {
+          to: "all",
+          mentions: [self === "ff1" ? "ff2" : "ff1"],
+          text: "heading north",
+        });
+      }
     }
     return {
       response: "",
@@ -160,8 +166,13 @@ describe("recording and replay", () => {
     expect(result.status).toBe("completed");
     expect(verifyRecording(file).ok).toBe(true);
     const b = loadBundle(file);
+    const initialHashes = b.frames
+      .filter((f) => f.kind === "tick" && f.tick === 0)
+      .map((f) => (f.kind === "tick" ? f.hash : ""));
+    expect(new Set(initialHashes)).toEqual(new Set([initialHashes[0]]));
     expect(b.frames.filter((f) => f.kind === "tick")).toHaveLength(62);
     expect(b.frames.at(-1)?.kind).toBe("end");
+    expect(b.header.config.prompt_version).toBe("4");
     const db = openRecording(file);
     const cfg = readConfig(db);
     db.close();
@@ -191,6 +202,20 @@ describe("LLM teams (fake model)", () => {
     expect(msgs.length).toBeGreaterThanOrEqual(5); // every message wakes the others, who may send again (capped per tick)
     const consumed = frames.filter((f) => f.kind === "delivery" && f.stage === "consumed");
     expect(consumed.length).toBeGreaterThan(0);
+    expect(verifyRecording(file).ok).toBe(true);
+  });
+
+  it("local chat changes only who receives each room message", async () => {
+    const llm = new FakeLlm();
+    const { file } = await record([chatMentions, chatBroadcast], 2, llm);
+    const messages = loadBundle(file).frames.filter((f) => f.kind === "message");
+    const targeted = messages.filter((m) => m.world_id === "w1-chat-mentions");
+    const broadcast = messages.filter((m) => m.world_id === "w2-chat-broadcast");
+    expect(targeted.length).toBeGreaterThan(0);
+    expect(broadcast.length).toBeGreaterThan(0);
+    expect(targeted.every((m) => m.to.length === 1)).toBe(true);
+    expect(broadcast.every((m) => m.to.length === 4)).toBe(true);
+    expect(broadcast.every((m) => (m.meta?.addressed_to as string[]).length === 1)).toBe(true);
     expect(verifyRecording(file).ok).toBe(true);
   });
 

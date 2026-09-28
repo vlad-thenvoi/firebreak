@@ -15,7 +15,11 @@ export class AnthropicApiClient implements LlmClient {
 
   constructor(
     readonly model: string,
-    private opts: { temperature: number; maxTokens: number },
+    private opts: {
+      temperature: number;
+      reasoningEffort: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+      maxTokens: number;
+    },
     apiKey = process.env.ANTHROPIC_API_KEY,
   ) {
     if (!apiKey) throw new Error("llm.backend=api needs ANTHROPIC_API_KEY");
@@ -39,13 +43,22 @@ export class AnthropicApiClient implements LlmClient {
       cost_estimated: false,
     };
     let cacheWrite = 0;
+    const adaptive = /^claude-(?:opus|sonnet|fable)-(?:[5-9]|4-[7-9])/.test(this.model);
     try {
       for (let turn = 0; turn < req.maxTurns; turn++) {
         const msg = await this.client.messages.create(
           {
             model: this.model,
             max_tokens: this.opts.maxTokens,
-            temperature: this.opts.temperature,
+            ...(adaptive
+              ? {
+                  thinking: { type: "adaptive" as const },
+                  output_config: {
+                    effort: (this.opts.reasoningEffort === "none" ? "low" : this.opts.reasoningEffort) as
+                      "low" | "medium" | "high" | "xhigh" | "max",
+                  },
+                }
+              : { temperature: this.opts.temperature }),
             system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
             tools,
             messages,

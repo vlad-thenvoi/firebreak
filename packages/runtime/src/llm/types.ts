@@ -35,9 +35,9 @@ export interface DecideResult {
   fatal?: "usage_limit" | "auth";
 }
 
-/** One model interface, two backends (SPEC §6.3). */
+/** One model interface shared by every backend (SPEC §6.3). */
 export interface LlmClient {
-  readonly backend: "api" | "claude-code";
+  readonly backend: "api" | "claude-code" | "openai";
   readonly model: string;
   decide(req: DecideRequest): Promise<DecideResult>;
 }

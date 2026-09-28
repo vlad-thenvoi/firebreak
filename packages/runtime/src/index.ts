@@ -8,6 +8,7 @@ export * from "./provenance";
 export * from "./llm/types";
 export { AnthropicApiClient, jsonSchema } from "./llm/anthropic-api";
 export { ClaudeCodeClient } from "./llm/claude-code";
+export { OpenAiResponsesClient } from "./llm/openai-responses";
 export { costUsd } from "./llm/pricing";
 export * from "./agent/agent";
 export * from "./agent/order-tools";
@@ -16,10 +17,23 @@ export * from "./agent/prompts";
 import type { MatchConfig } from "./config";
 import { AnthropicApiClient } from "./llm/anthropic-api";
 import { ClaudeCodeClient } from "./llm/claude-code";
+import { OpenAiResponsesClient } from "./llm/openai-responses";
 import type { LlmClient } from "./llm/types";
 
 export function createLlmClient(c: MatchConfig): LlmClient {
-  return c.llm.backend === "api"
-    ? new AnthropicApiClient(c.llm.model, { temperature: c.llm.temperature, maxTokens: c.llm.max_tokens })
-    : new ClaudeCodeClient(c.llm.model);
+  switch (c.llm.backend) {
+    case "api":
+      return new AnthropicApiClient(c.llm.model, {
+        temperature: c.llm.temperature,
+        reasoningEffort: c.llm.reasoning_effort,
+        maxTokens: c.llm.max_tokens,
+      });
+    case "openai":
+      return new OpenAiResponsesClient(c.llm.model, {
+        reasoningEffort: c.llm.reasoning_effort,
+        maxTokens: c.llm.max_tokens,
+      });
+    case "claude-code":
+      return new ClaudeCodeClient(c.llm.model);
+  }
 }

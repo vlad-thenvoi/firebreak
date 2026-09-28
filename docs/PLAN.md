@@ -91,7 +91,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 
 ### M6: Band team (M)
 - Register 5 external agents (open question §14.2), config loading.
-- `band` transport on `@band-ai/sdk` `GenericAdapter`: team room setup, `send_message`, `create_room`, `add_participant` (§7.3).
+- `band` transport on `@band-ai/sdk` `GenericAdapter`: team room setup, `send_message`, `create_room`, `add_participant` (§7.4).
 - Room cleanup after a match.
 - Resolve delivery semantics (§14.1) and document them in the transport.
 - Handle reconnects and rate-limit errors, and log them as events.
@@ -99,7 +99,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 **Done when:** a `band` vs `none` vs `perfect` match runs end to end with real Band rooms, and message timings are recorded.
 
 ### M7: Sub-agent team (M)
-- Orchestrated team controller (§7.4): orchestrator loop, `spawn`, sub-agent lifetime, `finish`, auto-report with structured sightings.
+- Orchestrated team controller (§7.5): orchestrator loop, `spawn`, sub-agent lifetime, `finish`, auto-report with structured sightings.
 - Viewer: hub-and-spoke message lines, spawn/report markers, and an orchestrator panel (its queue and live sub-agents).
 
 **Done when:** a four-team match (`none`, `perfect`, `band`, `subagents`) runs live and replays.
@@ -124,11 +124,11 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 ## v1: Slack and Linear
 
 ### M10: Slack team (M)
-- Sandbox workspace, 5 bot users, Socket Mode transport, `post` and `reply_in_thread` (§7.5).
+- Sandbox workspace, 5 bot users, Socket Mode transport, `post` and `reply_in_thread` (§7.6).
 - Viewer: broadcast-style message lines.
 
 ### M11: Linear team (M)
-- Sandbox workspace, webhook receiver (local tunnel), `create_issue`, `comment`, `set_status`, `assign` (§7.6).
+- Sandbox workspace, webhook receiver (local tunnel), `create_issue`, `comment`, `set_status`, `assign` (§7.7).
 - Viewer: issue cards next to the board.
 
 ### M12: Full batch

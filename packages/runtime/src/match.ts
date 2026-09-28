@@ -19,6 +19,7 @@ import { RealClock, VirtualClock, type Clock } from "./clock";
 import { toGameConfig, type MatchConfig } from "./config";
 import type { LlmClient } from "./llm/types";
 import type { DistributiveOmit, TeamController, TeamFactory, WorldHandle } from "./team";
+import { PROMPT_VERSION } from "./agent/prompts";
 
 export interface MatchOptions {
   matchId: string;
@@ -92,7 +93,11 @@ export class MatchRunner {
       ticks: this.o.config.ticks,
       teams: this.o.teams.map((t, i) => ({ world_id: worldIdFor(i, t.type), team: t.type, label: t.label })),
       scenario: this.scenario,
-      config: { ...this.o.configSections, engine_version: ENGINE_VERSION },
+      config: {
+        ...this.o.configSections,
+        engine_version: ENGINE_VERSION,
+        prompt_version: PROMPT_VERSION,
+      },
     };
   }
 

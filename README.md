@@ -4,13 +4,15 @@ A live, replayable game that compares how well teams of AI agents coordinate whe
 
 Teams of 5 AI firefighters defend identical copies of a town from spreading wildfires, side by side, on the same seed and the same clock. Every match is recorded to one SQLite file and can be replayed at any speed, verified, measured, and exported as a single HTML file.
 
-| Team                        | How it communicates                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------- |
-| `band`                      | Real Band rooms through `@band-ai/sdk`: @mention exactly who needs to know, create rooms per task |
-| `subagents`                 | An orchestrator with no body spawns one sub-agent per body; sub-agents only report back           |
-| `none`                      | No communication (lower bound)                                                                    |
-| `perfect`                   | Everyone sees everything any teammate sees, instantly (upper bound)                               |
-| `bots-none`, `bots-perfect` | Scripted bots, no LLM (for development and tuning)                                                |
+| Team                        | How it communicates                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `chat-mentions`             | Local shared room; only explicitly mentioned teammates receive each message                        |
+| `chat-broadcast`            | Local shared room; every teammate receives every message, while mentions mark the intended readers |
+| `none`                      | No communication (lower bound)                                                                     |
+| `perfect`                   | Everyone sees everything any teammate sees, instantly (upper bound)                                |
+| `band`                      | Optional real Band rooms through `@band-ai/sdk`                                                    |
+| `subagents`                 | Optional orchestrator that spawns ephemeral workers                                                |
+| `bots-none`, `bots-perfect` | Scripted bots, no LLM (for development and tuning)                                                 |
 
 - [Specification](docs/SPEC.md) · [Implementation plan](docs/PLAN.md) · [Tuning notes](docs/TUNING.md) · [Guide for coding agents](AGENTS.md)
 
@@ -18,11 +20,11 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 
 ```bash
 pnpm install
-cp .env.example .env                 # only needed for llm.backend=api
+cp .env.example .env                 # API credentials, if using a billed backend
 cp band_agents.yaml.example band_agents.yaml   # only needed for the band team
 ```
 
-Requires Node 22.13+ and pnpm. LLM teams run on your Claude subscription by default (`llm.backend: claude-code`, uses your local `claude` login); set `--set llm.backend=api` and `ANTHROPIC_API_KEY` to use the API instead.
+Requires Node 22.13+ and pnpm. LLM teams run on your Claude subscription by default (`llm.backend: claude-code`, using the local `claude` login). Use `llm.backend=api` with `ANTHROPIC_API_KEY` for the Claude API, or `llm.backend=openai` with `OPENAI_API_KEY` for the OpenAI Responses API. The CLI reads credentials from the process environment; it does not load `.env` itself.
 
 ## Run a match
 
@@ -30,8 +32,9 @@ Requires Node 22.13+ and pnpm. LLM teams run on your Claude subscription by defa
 # All four teams, 60 ticks × 5 s, with the live viewer at http://localhost:5173/?live
 pnpm firebreak run --live
 
-# Pick teams, seed and any config value
-pnpm firebreak run --teams band,subagents --seed 7 --set ticks=30
+# Pick teams, seed, provider and any config value
+pnpm firebreak run --teams chat-mentions,chat-broadcast --seed 7 --set ticks=30
+pnpm firebreak run --set llm.backend=openai --set llm.model=gpt-5.6-luna
 
 # Scripted bots, instant (no LLM)
 pnpm firebreak run --teams bots-none,bots-perfect --virtual

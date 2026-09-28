@@ -1,6 +1,6 @@
 import { ROLES, renderMapText, type Observation, type Role, type Scenario } from "@firebreak/engine";
 
-export const PROMPT_VERSION = "3";
+export const PROMPT_VERSION = "4";
 
 const ROLE_TEXT: Record<Role, string> = {
   scout:

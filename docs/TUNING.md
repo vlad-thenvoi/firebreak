@@ -80,3 +80,28 @@ The first attempt hit the Claude subscription's usage limit at tick 1; the runne
 2. Try one batch with a stronger model (open question §14.7): weak play adds noise that hides communication effects.
 3. Look at why `perfect` underperforms (herding, prompt size), e.g. give each agent its own view plus a compact list of teammates' orders instead of the full union.
 4. Keep the showcase honest: pick replays that show the mechanism (idle sub-agent bodies, forecasts that never arrive), not just the biggest score gap.
+
+## 7. Local chat and OpenAI backend (prompt v4)
+
+The default comparison changed from `none,perfect,band,subagents` to `none,perfect,chat-mentions,chat-broadcast`. Real Band and sub-agents remain selectable, but the default now isolates one delivery rule without credentials or network variance:
+
+- `chat-mentions`: only mentioned teammates receive and wake.
+- `chat-broadcast`: all teammates receive and wake; mentions still identify the intended recipients for noise metrics.
+
+Both conditions expose the same tool and prompt wording except for the delivery rule. Offline fake-LLM tests verify recipient counts and deterministic replay. API smoke tests on 2026-09-28:
+
+| Backend/model | Setup | Result | Recorded cost |
+|---|---|---|---:|
+| Anthropic API / `claude-haiku-4-5-20251001` | 1 tick, `none`, seed 101 | completed and verified | $0.026 |
+| Anthropic API / `claude-opus-5-5` (`low` effort) | 1 tick, `none`, seed 103 | completed and verified | $0.090 |
+| OpenAI Responses / `gpt-5.6-luna` (`low` effort) | 1 tick, `none`, seed 102 | blocked: supplied API key returned HTTP 401 | $0 |
+
+The four new default teams also completed and verified a 6-tick Haiku API match on seed 104. Scores were all +45 at this short horizon; costs were `$0.071 none`, `$0.071 perfect`, `$0.091 chat-mentions`, and `$0.084 chat-broadcast`. The recording contains 10 targeted-room messages and 8 broadcast-room messages. `mentions: ["all"]` intentionally expands to all four peers in the targeted condition, while narrower mentions deliver only to the named peers.
+
+The OpenAI path uses `store: false`, replays all response items only inside a validation-error retry, and records input, output, cache-read, cache-write, latency, and estimated cost. Full cross-model runs must wait for a valid OpenAI credential so both providers can be tested symmetrically.
+
+### Paired advanced-model run protocol
+
+Each requested production repetition uses seed `42`. Every match contains `none`, `perfect`, `chat-mentions`, and `chat-broadcast`, and `MatchRunner` constructs one scenario from that seed and gives the identical initial world and event schedule to all four teams. Using seed `42` for every Claude Opus 5.5 and GPT-5.6 Sol repetition keeps the world fixed across providers as well; only model sampling and the communication condition can vary. The recording header stores the seed, complete scenario, model, prompt version, and tool definitions so this pairing is auditable.
+
+For a later statistical study, use several seeds but keep the same seed list for every model and condition (paired blocks). A single fixed seed is ideal for this requested apples-to-apples replay set, but it does not measure performance across different maps.

@@ -129,7 +129,7 @@ Every agent gets a compact JSON observation whenever it is woken (see 6.2):
 
 - **Shared randomness.** Every random roll comes from `hash(seed, tick, x, y, purpose)`, not from a stream. So the same tile gets the same roll in every world on the same tick, even though the worlds have drifted apart. Luck is identical across teams.
 - **Scheduled events** are generated from the seed before the match and are identical in every world.
-- **Same model, same settings** (model id, temperature, max tokens) for every LLM call in the match, orchestrator included.
+- **Same model, same settings** (model id, supported sampling/reasoning effort, max tokens) for every LLM call in the match, orchestrator included.
 - **Same base prompt** for every agent. Only a short section describing the communication tools differs between teams (section 7).
 - **Same context budget.** Each agent's prompt holds its role, its latest observation, its last 30 messages, and a short log of its own recent orders. Every team gets the same limits.
 - **Recorded model latency.** Every LLM call's latency is recorded, so a slow-API streak can be spotted and a match discarded.
@@ -160,12 +160,13 @@ At most 3 decisions per agent per tick. At real model latency (~4 s per decision
 
 ### 6.3 LLM backends
 
-The runtime calls models through one interface, `LlmClient.decide(prompt, tools) → { toolCalls, usage, latency }`. It has two backends:
+The runtime calls models through one interface, `LlmClient.decide(prompt, tools) → { toolCalls, usage, latency }`. It has three backends:
 
 | Backend | Auth | Implementation | Notes |
 |---|---|---|---|
 | `api` | `ANTHROPIC_API_KEY` | `@anthropic-ai/sdk` Messages API with tool use | Lowest latency, billed per token |
 | `claude-code` (default) | Claude subscription: the local `claude` login, or `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | `@anthropic-ai/claude-agent-sdk` `query()`, with a custom `systemPrompt`, built-in tools disabled, and game tools served through `createSdkMcpServer` | Not billed per token. Subject to the subscription's usage limits. ~4 s per decision |
+| `openai` | `OPENAI_API_KEY` | OpenAI Responses API with function tools | Stateless (`store: false`), billed per token |
 
 Settings the `claude-code` backend needs to behave like the `api` backend (measured, see docs/TUNING.md):
 - `thinking: { type: "disabled" }`. Claude Code enables adaptive thinking by default, which made decisions take 10–40 s.
@@ -175,11 +176,11 @@ Settings the `claude-code` backend needs to behave like the `api` backend (measu
 
 - **One backend per match.** All teams in a match use the same backend, so the comparison stays fair. The backend is recorded with the match (§8.2).
 - **Compare within a backend.** Latency differs between backends, so reports compare matches from the same backend only (and the same `tick_ms`).
-- **Stateless calls in both backends.** Every decision is a fresh call with a freshly built prompt (§6.1). No backend-side session memory, so both backends see exactly the same input.
-- **Cost:** `api` records real cost from token usage. `claude-code` records tokens plus the SDK's `total_cost_usd` as an *estimated* cost.
+- **Stateless calls in every backend.** Every decision is a fresh call with a freshly built prompt (§6.1). No backend-side session memory, so every backend sees exactly the recorded input.
+- **Cost:** `api` and `openai` calculate cost from token usage and the recorded model price. `claude-code` records tokens plus the SDK's `total_cost_usd` as an *estimated* cost.
 - **Usage limits:** a match is about 1,200 model calls. Before a `claude-code` match or batch starts, the runner warns that it may hit the subscription's usage limits. If a limit is hit, the match is aborted and marked `aborted: usage_limit`, not scored.
 - Default model: `claude-haiku-4-5-20251001` (fast and cheap, which keeps ticks short). Configurable per match.
-- **Per-match budget cap** (tokens, and $ for `api`). The match aborts cleanly if it's exceeded.
+- **Per-match budget cap** (tokens, and $ for billed API backends). The match aborts cleanly if it's exceeded.
 
 ### 6.4 Tools
 
@@ -198,8 +199,8 @@ Everything an agent does goes through tool calls. There is no free-text parsing.
 
 Two kinds of team controller:
 
-- **Peer teams** (none, perfect, band, slack, linear): 5 agents, each running the loop in 6.1, talking through a `Transport`.
-- **Orchestrated team** (subagents): an orchestrator plus spawned sub-agents (7.4).
+- **Peer teams** (none, perfect, chat-mentions, chat-broadcast, band, slack, linear): 5 agents, each running the loop in 6.1, talking through a `Transport`.
+- **Orchestrated team** (subagents): an orchestrator plus spawned sub-agents (7.5).
 
 ```ts
 interface Transport {
@@ -219,7 +220,15 @@ No communication tools. Each agent knows only its own observation.
 ### 7.2 `perfect` (upper bound)
 No communication tools. Each agent's observation is the **union** of all teammates' observations, plus every teammate's current order and the scout's forecast, delivered instantly. Wake triggers are computed on that union.
 
-### 7.3 `band`
+### 7.3 `chat-mentions` and `chat-broadcast`
+
+Both deterministic local-chat teams expose the same `send_message(text, mentions[])` tool and use one `#team` room. `mentions` names intended recipients in both conditions.
+
+- `chat-mentions`: only intended recipients receive the message and wake.
+- `chat-broadcast`: every other teammate receives the message and wakes; the `addressed` flag remains true only for intended recipients so noise can be measured.
+- Delivery is immediate and in-process, removing credentials, external rate limits, and network variance. These conditions measure delivery topology, not a specific product.
+
+### 7.4 `band`
 - 5 Band agents (external agents on the platform), connected with `@band-ai/sdk` using `GenericAdapter` as the transport only. The LLM loop stays ours, identical to the other teams.
 - A team room containing all 5 agents is created at setup.
 - Tools exposed: `send_message(room, text, mentions[])`, `create_room(name, participants[])`, `add_participant(room, agent)`. They map to the Band REST calls behind `band_send_message`, `band_create_chatroom`, and `band_add_participant`.
@@ -228,7 +237,7 @@ No communication tools. Each agent's observation is the **union** of all teammat
 - Rooms are real Band rooms and stay in the account after the match, so a match's conversation can also be read in the Band app.
 - Credentials: `band_agents.yaml` (git-ignored), one external agent per role.
 
-### 7.4 `subagents`
+### 7.5 `subagents`
 Follows the real sub-agent pattern (Claude Agent SDK / Task tool, LangGraph supervisor, agents-as-tools).
 
 - **Orchestrator:** a 6th LLM with no body. It sees only what sub-agents report. Its tokens are included in the team's cost.
@@ -241,12 +250,12 @@ Follows the real sub-agent pattern (Claude Agent SDK / Task tool, LangGraph supe
 - The orchestrator is also woken by a heartbeat every 3 ticks while any body has no sub-agent, and its prompt tells it to keep every body busy (generous on purpose).
 - Spawns and reports are recorded as messages (`channel: "spawn"` and `"report"`), so the viewer draws them as hub-and-spoke lines to the HQ icon, and the metrics can measure the orchestrator's queue time.
 
-### 7.5 `slack` (v1)
+### 7.6 `slack` (v1)
 - 5 Slack bot users in one workspace, one `#team-<match>` channel, Socket Mode (real-time push).
 - Tools: `post(text)`, `reply_in_thread(thread_ts, text)`.
 - Every channel message is delivered to every agent (that's how channels work). Real Slack rate limits apply.
 
-### 7.6 `linear` (v1)
+### 7.7 `linear` (v1)
 - 5 Linear agents/users, one team and project per match, webhooks (not polling).
 - Tools: `create_issue(title, description, assignee?)`, `comment(issue, text)`, `set_status(issue, status)`, `assign(issue, agent)`.
 - An agent is sent events for issues assigned to it, issues it's subscribed to, and comments that mention it.
@@ -275,7 +284,7 @@ Each match is stored in one SQLite file: `runs/<match-id>.sqlite`.
 **The configuration is always stored with the recording**, so every match documents exactly how it was produced:
 
 - **Resolved config:** the final values after defaults, the config file, and CLI overrides were merged, plus the original config file text and the CLI arguments.
-- **LLM:** backend (`api` / `claude-code`), model id, temperature, max tokens, turn limit.
+- **LLM:** backend (`api` / `claude-code` / `openai`), model id, temperature, reasoning effort, max tokens, turn limit.
 - **Prompts and tools:** the full text of every role prompt and transport tools section, and every tool definition, each with a content hash.
 - **Code:** engine version, git commit, a dirty-tree flag, and package versions (e.g. `@band-ai/sdk`, the Agent SDK).
 - **Environment:** OS, Node version, and the Band / Slack / Linear environment URLs.
@@ -345,11 +354,12 @@ Every metric is a SQL query over the recording.
 seed: 42
 ticks: 60
 tick_ms: 5000
-teams: [none, perfect, band, subagents]
+teams: [none, perfect, chat-mentions, chat-broadcast]
 llm:
-  backend: claude-code          # claude-code (subscription) | api (ANTHROPIC_API_KEY)
+  backend: claude-code          # claude-code | api (Anthropic) | openai (Responses)
   model: claude-haiku-4-5-20251001
   temperature: 0.2
+  reasoning_effort: low
   max_turns_per_decision: 3
 budget: { usd: 5.00, tokens: 10000000 }
 map: { size: 20, houses: [8, 12], civilians: [4, 6], wind_shifts: [2, 3] }
@@ -392,10 +402,10 @@ firebreak/
 
 Answered while building v0:
 
-1. ~~Band delivery semantics.~~ Only @mentioned members receive a message; at least one mention is required (§7.3).
+1. ~~Band delivery semantics.~~ Only @mentioned members receive a message; at least one mention is required (§7.4).
 2. ~~Band accounts.~~ Five external agents in the owner's account (`Firebreak Scout`, `FF1`, `FF2`, `Engineer`, `Rescuer`), reused across matches.
-3. ~~Sub-agent implementation.~~ Our own spawn/return implementation on the shared LLM client (§7.4). An Agent SDK variant is still a possible later check.
-4. ~~Tick length.~~ 5 s works: decisions take ~4 s on both backends' current settings (docs/TUNING.md).
+3. ~~Sub-agent implementation.~~ Our own spawn/return implementation on the shared LLM client (§7.5). An Agent SDK variant is still a possible later check.
+4. ~~Tick length.~~ 5 s works for the original Anthropic backends' measured settings (docs/TUNING.md); latency is recorded for every backend.
 
 Still open:
 
