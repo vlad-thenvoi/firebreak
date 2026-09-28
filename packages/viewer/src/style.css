@@ -257,6 +257,12 @@ a {
   font-weight: 800;
   letter-spacing: 0.1em;
 }
+.commentary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .commentary-status {
   overflow: hidden;
   color: var(--muted);
@@ -264,6 +270,21 @@ a {
   letter-spacing: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.commentary-read {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid rgba(199, 146, 234, 0.5);
+  border-radius: 999px;
+  background: rgba(199, 146, 234, 0.12);
+  color: var(--accent-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.commentary-read:hover {
+  background: rgba(199, 146, 234, 0.24);
 }
 .commentary-body {
   max-height: 158px;
@@ -276,6 +297,51 @@ a {
 }
 .commentary-error {
   color: var(--danger, #ff6b7d);
+}
+
+.broadcast-dialog {
+  width: min(800px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 28px clamp(22px, 5vw, 52px) 40px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+.broadcast-dialog::backdrop {
+  background: rgba(7, 9, 14, 0.8);
+}
+.broadcast-dialog h2 {
+  margin: 3px 0 24px;
+  font-size: 30px;
+}
+.broadcast-transcript article {
+  padding: 0 0 28px;
+  border-bottom: 1px solid var(--line);
+  color: #cdd1df;
+  font-size: 16px;
+  line-height: 1.65;
+}
+.broadcast-transcript article + article {
+  padding-top: 28px;
+}
+.broadcast-transcript article:last-child {
+  border-bottom: 0;
+}
+.broadcast-transcript article.latest {
+  color: var(--text);
+}
+.broadcast-transcript h3 {
+  margin: 0 0 12px;
+  color: var(--accent-2);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.broadcast-transcript p {
+  margin: 0 0 13px;
 }
 
 .controls {

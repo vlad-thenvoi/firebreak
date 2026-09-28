@@ -202,6 +202,13 @@ export class Timeline {
     return best;
   }
 
+  commentaryThrough(w: WorldTimeline, t: number): CommentarySegment[] {
+    return w.commentary
+      .flatMap((call) => call.segments)
+      .filter((segment) => segment.t_ms <= t)
+      .sort((a, b) => b.t_ms - a.t_ms);
+  }
+
   /** Markers for the scrubber: notable events across all worlds. */
   markers(): { t: number; type: string }[] {
     const notable = new Set([

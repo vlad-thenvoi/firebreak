@@ -59,6 +59,7 @@ export class Player {
   private lastFrame = performance.now();
   private badge!: HTMLElement;
   private legend!: HTMLDialogElement;
+  private broadcastDialog!: HTMLDialogElement;
 
   constructor(
     private root: HTMLElement,
@@ -120,7 +121,16 @@ export class Player {
       const counters = el("div", "counters");
       const ticker = el("div", "ticker");
       const commentary = el("section", "commentary");
-      commentary.innerHTML = `<div class="commentary-head"><span>AI BROADCAST</span><span class="commentary-status">post-match observer</span></div><div class="commentary-body meta">Waiting for commentary…</div>`;
+      const commentaryHead = el("div", "commentary-head");
+      commentaryHead.append(el("span", "", "AI BROADCAST"));
+      const commentaryActions = el("span", "commentary-actions");
+      commentaryActions.append(el("span", "commentary-status", "post-match observer"));
+      const readCommentary = el("button", "commentary-read", "Read full");
+      readCommentary.type = "button";
+      readCommentary.addEventListener("click", () => this.openBroadcast(c));
+      commentaryActions.append(readCommentary);
+      commentaryHead.append(commentaryActions);
+      commentary.append(commentaryHead, el("div", "commentary-body meta", "Waiting for commentary…"));
       card.append(head, wrap, counters, ticker, commentary);
       this.boardsEl.append(card);
       const c: Card = {
@@ -191,7 +201,11 @@ export class Player {
     }
 
     this.legend = createLegendDialog();
-    shell.append(top, main, controls, this.legend);
+    this.broadcastDialog = el("dialog", "broadcast-dialog") as HTMLDialogElement;
+    this.broadcastDialog.addEventListener("click", (event) => {
+      if (event.target === this.broadcastDialog) this.broadcastDialog.close();
+    });
+    shell.append(top, main, controls, this.legend, this.broadcastDialog);
     this.root.replaceChildren(shell);
     this.setSpeed(1);
     requestAnimationFrame(() => this.layout());
@@ -493,6 +507,31 @@ export class Player {
     const pre = el("pre", "", call.prompt ?? "loading…");
     box.append(pre);
     if (!call.prompt) void this.loadPrompt(call, pre);
+  }
+
+  private openBroadcast(c: Card) {
+    const updates = this.tl.commentaryThrough(c.world, this.t);
+    const dialog = this.broadcastDialog;
+    dialog.replaceChildren();
+    const close = el("button", "dialog-close", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close broadcast transcript");
+    close.addEventListener("click", () => dialog.close());
+    dialog.append(close, el("div", "eyebrow", "AI broadcast"), el("h2", "", c.world.label));
+    if (!updates.length) {
+      dialog.append(el("p", "meta", this.o.commentaryError ?? "No broadcast update is available yet."));
+    } else {
+      const transcript = el("div", "broadcast-transcript");
+      updates.forEach((update, index) => {
+        const article = el("article", index === 0 ? "latest" : "");
+        article.append(el("h3", "", index === 0 ? "Latest update" : "Earlier update"));
+        for (const paragraph of update.commentary.split(/\n\s*\n/).filter(Boolean))
+          article.append(el("p", "", paragraph.trim()));
+        transcript.append(article);
+      });
+      dialog.append(transcript);
+    }
+    dialog.showModal();
   }
 
   private async loadPrompt(call: LlmFrame, pre: HTMLElement) {
