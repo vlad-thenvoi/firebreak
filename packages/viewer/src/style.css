@@ -242,7 +242,7 @@ a {
 }
 
 .commentary {
-  min-height: 124px;
+  min-height: 190px;
   padding: 8px 10px 10px;
   border-top: 1px solid var(--line);
   background: linear-gradient(135deg, rgba(199, 146, 234, 0.09), rgba(91, 192, 235, 0.04));
@@ -266,20 +266,13 @@ a {
   white-space: nowrap;
 }
 .commentary-body {
-  max-height: 96px;
+  max-height: 158px;
   overflow: auto;
   font-size: 11px;
   line-height: 1.35;
 }
-.commentary-body > strong {
-  color: var(--text);
-  font-size: 12px;
-}
 .commentary-body p {
-  margin: 3px 0 0;
-}
-.commentary-body b {
-  color: var(--accent-2);
+  margin: 0 0 8px;
 }
 .commentary-error {
   color: var(--danger, #ff6b7d);

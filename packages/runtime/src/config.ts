@@ -95,7 +95,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
     interval_ticks: 10,
     backend: "claude-code",
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 1200,
+    max_tokens: 2400,
     reasoning_effort: "low",
   },
   band: {

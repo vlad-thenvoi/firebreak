@@ -203,7 +203,7 @@ export class Player {
     const box = this.boardsEl.getBoundingClientRect();
     const W = box.width - 24;
     const H = box.height - 24;
-    const chrome = 300; // card header + counters + message ticker + broadcast booth
+    const chrome = 365; // card header + counters + message ticker + broadcast booth
     let best = { cols: 1, size: 0 };
     for (let cols = 1; cols <= n; cols++) {
       const rows = Math.ceil(n / cols);
@@ -371,9 +371,13 @@ export class Player {
       const body = c.commentary.querySelector(".commentary-body")!;
       const status = c.commentary.querySelector(".commentary-status")!;
       if (commentary) {
-        status.textContent = `tick ${commentary.tick} · ${commentary.model} · $${commentary.cost_usd.toFixed(3)} total`;
+        status.textContent = "omniscient replay commentary";
         body.className = "commentary-body";
-        body.innerHTML = `<strong>${esc(commentary.headline)}</strong><p>${esc(commentary.situation)}</p><p><b>Teamwork:</b> ${esc(commentary.teamwork)}</p><p><b>Analyst:</b> ${esc(commentary.verdict)}</p>${commentary.error ? `<p class="commentary-error">${esc(commentary.error)}</p>` : ""}`;
+        body.innerHTML = commentary.commentary
+          .split(/\n\s*\n/)
+          .filter(Boolean)
+          .map((paragraph) => `<p>${esc(paragraph.trim())}</p>`)
+          .join("");
       } else {
         status.textContent = "post-match observer";
         body.className = "commentary-body meta";

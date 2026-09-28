@@ -190,20 +190,12 @@ export class Timeline {
     return null;
   }
 
-  commentaryAt(
-    w: WorldTimeline,
-    t: number,
-  ): (CommentarySegment & { model: string; cost_usd: number; error?: string }) | null {
-    let best: (CommentarySegment & { model: string; cost_usd: number; error?: string }) | null = null;
+  commentaryAt(w: WorldTimeline, t: number): CommentarySegment | null {
+    let best: CommentarySegment | null = null;
     for (const call of w.commentary) {
       for (const segment of call.segments) {
         if (segment.t_ms <= t && (!best || segment.t_ms >= best.t_ms)) {
-          best = {
-            ...segment,
-            model: call.model,
-            cost_usd: call.cost_usd,
-            ...(call.error ? { error: call.error } : {}),
-          };
+          best = segment;
         }
       }
     }

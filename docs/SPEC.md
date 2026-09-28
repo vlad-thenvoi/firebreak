@@ -369,7 +369,7 @@ band: { agents_file: band_agents.yaml, rest_url: https://app.band.ai, ws_url: ws
 record: { dir: runs, prompts: true }
 agent: { message_window: 30, heartbeat_ticks: 3, order_log: 5, max_decisions_per_tick: 3 }
 subagents: { max_lifetime_ticks: 8 }
-commentator: { enabled: false, interval_ticks: 10, backend: claude-code, model: claude-haiku-4-5-20251001, max_tokens: 1200, reasoning_effort: low }
+commentator: { enabled: false, interval_ticks: 10, backend: claude-code, model: claude-haiku-4-5-20251001, max_tokens: 2400, reasoning_effort: low }
 ```
 
 Every knob in section 4 is configurable, so difficulty can be tuned.

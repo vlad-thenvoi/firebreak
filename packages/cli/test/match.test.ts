@@ -46,10 +46,8 @@ class FakeLlm implements LlmClient {
       await call("publish_broadcast", {
         segments: ticks.map((t) => ({
           tick: t,
-          headline: `Firebreak update at tick ${t}`,
-          situation: "The commentator can see the complete fire map and every civilian.",
-          teamwork: "The team is coordinating its current orders.",
-          verdict: "Protect the nearest threatened house next.",
+          commentary:
+            "Fire crews are confronting a growing front near several homes.\n\nThe team is concentrating its response and keeping rescue routes open.\n\nTheir priorities are sound, but the largest cluster needs immediate attention.",
         })),
       });
     } else if (names.has("spawn")) {

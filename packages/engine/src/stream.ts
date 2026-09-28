@@ -93,10 +93,8 @@ export interface LlmFrame {
 export interface CommentarySegment {
   tick: number;
   t_ms: number;
-  headline: string;
-  situation: string;
-  teamwork: string;
-  verdict: string;
+  /** Human-facing prose. Paragraphs are separated by blank lines. */
+  commentary: string;
 }
 
 /** One post-match commentator call can publish several replay-time checkpoints. */
