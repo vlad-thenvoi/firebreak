@@ -16,7 +16,7 @@ const params = new URLSearchParams(location.search);
 function play(bundle: RecordingBundle, name?: string, commentaryError?: string) {
   const tl = new Timeline(bundle.header);
   for (const f of bundle.frames) tl.add(f);
-  new Player(app, tl, {
+  const player = new Player(app, tl, {
     mode: "replay",
     ...(params.has("t") ? { startAt: Number(params.get("t")) } : {}),
     ...(params.has("speed") ? { speed: Number(params.get("speed")) } : {}),
@@ -24,6 +24,24 @@ function play(bundle: RecordingBundle, name?: string, commentaryError?: string) 
     ...(name ? { recordingName: name, fetchPrompt: (id: string) => fetchPrompt(name, id) } : {}),
     ...(commentaryError ? { commentaryError } : {}),
   });
+  return { tl, player };
+}
+
+async function generateMissingCommentary(rec: string, tl: Timeline, player: Player) {
+  try {
+    const generated = await fetch(`/api/recordings/${encodeURIComponent(rec)}/commentary`, {
+      method: "POST",
+    });
+    if (!generated.ok) {
+      const body = (await generated.json()) as { error?: string };
+      throw new Error(body.error ?? `HTTP ${generated.status}`);
+    }
+    for (const frame of (await generated.json()) as StreamFrame[]) tl.add(frame);
+    player.setCommentaryMessage();
+    player.onFrames();
+  } catch (e) {
+    player.setCommentaryMessage(e instanceof Error ? e.message : String(e));
+  }
 }
 
 async function fetchPrompt(rec: string, id: string): Promise<string | null> {
@@ -115,23 +133,16 @@ async function boot() {
       return;
     }
     const bundle = (await r.json()) as RecordingBundle;
-    let commentaryError: string | undefined;
     if (!bundle.frames.some((f) => f.kind === "commentary")) {
-      app.innerHTML = `<div class="index"><h1>Preparing ${rec}…</h1><p class="meta">Generating and saving the omniscient broadcast for this historical replay. The match recording will not be changed.</p></div>`;
-      try {
-        const generated = await fetch(`/api/recordings/${encodeURIComponent(rec)}/commentary`, {
-          method: "POST",
-        });
-        if (!generated.ok) {
-          const body = (await generated.json()) as { error?: string };
-          throw new Error(body.error ?? `HTTP ${generated.status}`);
-        }
-        bundle.frames.push(...((await generated.json()) as StreamFrame[]));
-      } catch (e) {
-        commentaryError = e instanceof Error ? e.message : String(e);
-      }
+      const { tl, player } = play(
+        bundle,
+        rec,
+        "Generating and saving this broadcast in the background. The replay is ready to watch.",
+      );
+      void generateMissingCommentary(rec, tl, player);
+      return;
     }
-    return play(bundle, rec, commentaryError);
+    return play(bundle, rec);
   }
   if (params.has("live")) return live();
   return index();

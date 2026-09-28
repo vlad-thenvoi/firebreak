@@ -4,6 +4,13 @@ import { HQ_ID, drawBoard, type HitTarget } from "./render";
 import type { Timeline, WorldTimeline } from "./timeline";
 
 const SPEEDS = [0.5, 1, 2, 4, 10];
+const TIMELINE_MARKERS = {
+  civilian_lost: { color: "#ff4d6d", label: "civilian lost" },
+  civilian_evacuated: { color: "#7cfc9a", label: "civilian evacuated" },
+  house_destroyed: { color: "#ff9f43", label: "house destroyed" },
+  wind_changed: { color: "#5bc0eb", label: "wind changed" },
+  bridge_collapsed: { color: "#c792ea", label: "bridge collapsed" },
+} as const;
 
 interface Card {
   world: WorldTimeline;
@@ -79,6 +86,11 @@ export class Player {
   /** Called by the live source whenever frames arrive. */
   onFrames(): void {
     if (this.o.mode === "live") this.liveOffset = performance.now() - this.tl.lastMs;
+  }
+
+  setCommentaryMessage(message?: string): void {
+    this.o.commentaryError = message;
+    this.lastVersion = -1;
   }
 
   private build() {
@@ -190,7 +202,17 @@ export class Player {
     });
     scrubWrap.append(this.scrubMarks, this.scrub);
     this.clockEl = el("div", "clock");
-    controls.append(scrubWrap, this.clockEl);
+    const timelineKey = el("div", "timeline-key");
+    timelineKey.title =
+      "Timeline event markers. Team-specific outcomes may appear once per team; shared wind and bridge events appear once.";
+    for (const { color, label } of Object.values(TIMELINE_MARKERS)) {
+      const item = el("span");
+      const mark = el("i");
+      mark.style.background = color;
+      item.append(mark, document.createTextNode(label));
+      timelineKey.append(item);
+    }
+    controls.append(scrubWrap, this.clockEl, timelineKey);
     if (this.o.mode === "live") {
       const liveBtn = el("button", "", "● live");
       liveBtn.addEventListener("click", () => {
@@ -420,15 +442,8 @@ export class Player {
     const ctx = cv.getContext("2d")!;
     ctx.clearRect(0, 0, cv.width, cv.height);
     const dur = Math.max(1, this.tl.durationMs);
-    const color: Record<string, string> = {
-      civilian_lost: "#ff4d6d",
-      civilian_evacuated: "#7cfc9a",
-      house_destroyed: "#ff9f43",
-      wind_changed: "#5bc0eb",
-      bridge_collapsed: "#c792ea",
-    };
     for (const m of this.tl.markers()) {
-      ctx.fillStyle = color[m.type] ?? "#999";
+      ctx.fillStyle = TIMELINE_MARKERS[m.type as keyof typeof TIMELINE_MARKERS]?.color ?? "#999";
       const x = (m.t / dur) * cv.width;
       ctx.fillRect(x - 1, 0, 2, cv.height * 0.35);
     }

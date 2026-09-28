@@ -396,6 +396,26 @@ a {
   min-width: 150px;
   text-align: right;
 }
+.timeline-key {
+  display: flex;
+  flex: 1 0 100%;
+  justify-content: flex-end;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.timeline-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.timeline-key i {
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  border-radius: 1px;
+}
 
 .inspector {
   width: 380px;
