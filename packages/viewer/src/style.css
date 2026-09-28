@@ -156,12 +156,17 @@ a {
   grid-template-columns: 1fr auto;
   min-height: 0;
 }
+.viewer-content {
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
 .boards {
   display: grid;
   gap: 12px;
-  padding: 12px;
+  width: 100%;
   min-height: 0;
-  overflow: auto;
   align-content: start;
   justify-content: center;
 }
@@ -173,7 +178,7 @@ a {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  align-self: start;
+  align-self: stretch;
   container-type: inline-size;
 }
 .card.leader {
@@ -182,17 +187,22 @@ a {
 }
 .card-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  height: 64px;
+  flex: 0 0 64px;
   padding: 8px 12px;
 }
 .card-head .label {
   font-weight: 700;
   font-size: 15px;
+  line-height: 1.2;
 }
 .card-head .team {
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 .card-head .score {
   margin-left: auto;
@@ -200,22 +210,39 @@ a {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
+.board-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
 .card canvas {
   display: block;
   width: 100%;
-  height: auto;
-  aspect-ratio: 1;
+  height: 100%;
   cursor: pointer;
 }
 .outcomes {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: 104px;
+  flex: 0 0 104px;
+  gap: 8px;
   padding: 7px 8px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.018);
 }
+.outcome-pair {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  min-width: 0;
+}
 .outcome {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -242,6 +269,8 @@ a {
 .counters {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
+  height: 62px;
+  flex: 0 0 62px;
   gap: 4px;
   padding: 6px 10px;
   border-top: 1px solid var(--line);
@@ -265,6 +294,7 @@ a {
 }
 .ticker {
   height: 56px;
+  flex: 0 0 56px;
   overflow: hidden;
   padding: 4px 10px 8px;
   font-size: 12px;
@@ -290,10 +320,13 @@ a {
 }
 
 @container (max-width: 480px) {
-  .outcomes,
   .counters {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     row-gap: 8px;
+  }
+  .counters {
+    height: 102px;
+    flex-basis: 102px;
   }
 }
 
@@ -310,8 +343,8 @@ a {
 }
 
 .outcome-chart {
-  grid-column: 1 / -1;
   min-width: 0;
+  margin-top: 12px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -419,7 +452,9 @@ a {
 }
 
 .commentary {
-  min-height: 190px;
+  height: 190px;
+  min-height: 0;
+  flex: 0 0 190px;
   padding: 8px 10px 10px;
   border-top: 1px solid var(--line);
   background: linear-gradient(135deg, rgba(199, 146, 234, 0.09), rgba(91, 192, 235, 0.04));
@@ -704,10 +739,6 @@ a {
   font-weight: 800;
   font-size: 22px;
 }
-.board-wrap {
-  position: relative;
-}
-
 .legend-dialog {
   width: min(720px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
@@ -1050,9 +1081,6 @@ a {
     border-left: none;
     border-top: 1px solid var(--line);
     z-index: 5;
-  }
-  .counters {
-    grid-template-columns: repeat(3, 1fr);
   }
   .clock {
     min-width: 0;

@@ -30,6 +30,8 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Added total/current/remaining tick information to every gameplay agent's system instructions and clarified the visibility, spread risk, and response priority of fire intensity.
 - Replaced the narrow “missed joint” counter with uncovered intensity-3 fire-ticks, which includes ignored and singly assigned joint fires.
 - Reworked the replay grid to size boards from available width instead of fixed panel-height estimates, and made statistic labels wrap into responsive three- or six-column layouts.
+- Separated the comparison chart from the board grid and fixed every card section to shared responsive heights, preventing stale canvas dimensions from stretching one card or misaligning statistics across teams.
+- Grouped mission outcomes into vertical civilian, fire, and house pairs, and exposed the saved commentator backend/model directly in each broadcast panel.
 
 ### Fairness and security
 

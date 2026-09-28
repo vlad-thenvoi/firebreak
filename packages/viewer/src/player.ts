@@ -69,6 +69,7 @@ export class Player {
   private lastVersion = -1;
   private cards: Card[] = [];
   private shell!: HTMLElement;
+  private contentEl!: HTMLElement;
   private boardsEl!: HTMLElement;
   private scrub!: HTMLInputElement;
   private scrubMarks!: HTMLCanvasElement;
@@ -147,9 +148,11 @@ export class Player {
     top.append(brand, this.badge, meta, compactRoleLegend(), el("div", "spacer"), help, toggles);
 
     const main = el("div", "main");
+    this.contentEl = el("div", "viewer-content");
     this.boardsEl = el("div", "boards");
     this.inspector = el("div", "inspector");
-    main.append(this.boardsEl, this.inspector);
+    this.contentEl.append(this.boardsEl);
+    main.append(this.contentEl, this.inspector);
 
     for (const w of this.tl.worlds.values()) {
       const card = el("div", "card");
@@ -508,22 +511,24 @@ export class Player {
     plot.append(this.chartCanvas);
     this.chartValues = el("div", "chart-values");
     section.append(heading, teamControls, plot, this.chartValues);
-    this.boardsEl.append(section);
+    this.contentEl.append(section);
   }
 
   private layout() {
     const visible = this.focused ? [this.focused] : this.cards.filter((c) => c.visible);
     const n = Math.max(1, visible.length);
     const box = this.boardsEl.getBoundingClientRect();
-    const W = box.width - 24;
+    const W = box.width;
     const cardMinimum = W >= 1_600 ? 330 : W >= 900 ? 300 : 260;
     const cols = this.focused ? 1 : Math.max(1, Math.min(n, Math.floor((W + 12) / (cardMinimum + 12))));
     this.boardsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     const dpr = window.devicePixelRatio || 1;
     for (const c of this.cards) {
-      const size = Math.max(1, c.root.getBoundingClientRect().width);
-      c.canvas.width = Math.round(size * dpr);
-      c.canvas.height = Math.round(size * dpr);
+      const bounds = c.canvas.getBoundingClientRect();
+      const size = Math.max(1, Math.min(bounds.width, bounds.height));
+      const pixels = Math.round(size * dpr);
+      if (c.canvas.width !== pixels) c.canvas.width = pixels;
+      if (c.canvas.height !== pixels) c.canvas.height = pixels;
     }
     const r = this.scrubMarks.getBoundingClientRect();
     this.scrubMarks.width = Math.round(r.width * dpr);
@@ -660,42 +665,50 @@ export class Player {
       const outcome = f.cur.score;
       const missionStat = (v: number, label: string, tone: "good" | "bad" | "neutral", title: string) =>
         `<div class="outcome ${tone}" title="${title}"><b>${v}</b><span>${label}</span></div>`;
+      const missionPair = (first: string, second: string) =>
+        `<div class="outcome-pair">${first}${second}</div>`;
       c.outcomes.innerHTML =
-        missionStat(
-          outcome.evacuated,
-          `saved +${outcome.evacuated * 10}`,
-          "good",
-          "Civilians evacuated: 10 points each.",
+        missionPair(
+          missionStat(
+            outcome.evacuated,
+            `saved +${outcome.evacuated * 10}`,
+            "good",
+            "Civilians evacuated: 10 points each.",
+          ),
+          missionStat(
+            outcome.lost,
+            `lost −${outcome.lost * 20}`,
+            "bad",
+            "Civilians lost: minus 20 points each.",
+          ),
         ) +
-        missionStat(
-          outcome.lost,
-          `lost −${outcome.lost * 20}`,
-          "bad",
-          "Civilians lost: minus 20 points each.",
+        missionPair(
+          missionStat(
+            outcome.extinguished,
+            `fires out +${outcome.extinguished}`,
+            "good",
+            "Fire tiles extinguished: 1 point each.",
+          ),
+          missionStat(
+            f.cur.fires.length,
+            "fires active",
+            f.cur.fires.length ? "bad" : "good",
+            "Fire tiles currently burning. This is not directly scored.",
+          ),
         ) +
-        missionStat(
-          outcome.extinguished,
-          `fires out +${outcome.extinguished}`,
-          "good",
-          "Fire tiles extinguished: 1 point each.",
-        ) +
-        missionStat(
-          f.cur.fires.length,
-          "fires active",
-          f.cur.fires.length ? "bad" : "good",
-          "Fire tiles currently burning. This is not directly scored.",
-        ) +
-        missionStat(
-          outcome.houses_standing,
-          `standing +${outcome.houses_standing * 5}`,
-          "good",
-          "Houses still standing: 5 points each at match end.",
-        ) +
-        missionStat(
-          outcome.houses_destroyed,
-          "destroyed",
-          outcome.houses_destroyed ? "bad" : "neutral",
-          "Houses destroyed. Each one removes the opportunity to earn 5 end-of-match points.",
+        missionPair(
+          missionStat(
+            outcome.houses_standing,
+            `standing +${outcome.houses_standing * 5}`,
+            "good",
+            "Houses still standing: 5 points each at match end.",
+          ),
+          missionStat(
+            outcome.houses_destroyed,
+            "destroyed",
+            outcome.houses_destroyed ? "bad" : "neutral",
+            "Houses destroyed. Each one removes the opportunity to earn 5 end-of-match points.",
+          ),
         );
       c.counters.innerHTML =
         counter(`$${k.cost.toFixed(2)}`, "cost") +
@@ -721,7 +734,12 @@ export class Player {
       const body = c.commentary.querySelector(".commentary-body")!;
       const status = c.commentary.querySelector(".commentary-status")!;
       if (commentary) {
-        status.textContent = "omniscient replay commentary";
+        const model = c.world.commentary.at(-1)?.model;
+        status.textContent = model ?? "omniscient replay commentary";
+        status.setAttribute(
+          "title",
+          model ? `Commentary generated by ${model}` : "Omniscient replay commentary",
+        );
         body.className = "commentary-body";
         body.innerHTML = commentary.commentary
           .split(/\n\s*\n/)

@@ -322,7 +322,7 @@ The viewer only ever consumes an **event stream**. Live mode is a websocket that
 
 ## 9. Viewer
 
-- **Layout:** a responsive grid of boards, one per team, each labelled with team name and live score. Column count follows available width rather than a fixed team count.
+- **Layout:** a responsive grid of boards, one per team, each labelled with team name and live score. Column count follows available width rather than a fixed team count. Visible cards use the same square-map and panel heights so each mission-stat and operational-stat row stays horizontally aligned; the comparison chart is a separate block below the grid.
 - **Board:** the tile map, fire intensity, agents as role icons, civilians with countdown rings, and fog of war shaded by the team's combined vision.
 - **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms).
 - **Counters** under each board: score, $ spent, messages, stale actions, idle ticks, uncovered intensity-3 fire-ticks.
