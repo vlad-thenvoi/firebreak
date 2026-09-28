@@ -369,7 +369,7 @@ band: { agents_file: band_agents.yaml, rest_url: https://app.band.ai, ws_url: ws
 record: { dir: runs, prompts: true }
 agent: { message_window: 30, heartbeat_ticks: 3, order_log: 5, max_decisions_per_tick: 3 }
 subagents: { max_lifetime_ticks: 8 }
-commentator: { enabled: false, interval_ticks: 10, backend: same, model: same, max_tokens: 1200, reasoning_effort: low }
+commentator: { enabled: false, interval_ticks: 10, backend: claude-code, model: claude-haiku-4-5-20251001, max_tokens: 1200, reasoning_effort: low }
 ```
 
 Every knob in section 4 is configurable, so difficulty can be tuned.
@@ -379,6 +379,8 @@ Every knob in section 4 is configurable, so difficulty can be tuned.
 The optional commentator is a derived replay layer, never a team member. For each world it receives omniscient checkpoints containing the complete current map and entities, agent state and orders, world events, and every message sent by that team regardless of transport delivery. One post-match model call publishes timestamped, plain-language segments covering the fire situation, teamwork/communication, and decision quality.
 
 Commentary runs only after gameplay has finished, is excluded from team budgets and metrics, and is never delivered to an agent. `run --commentary` generates it eagerly. The viewer, `export`, or `commentate` command generates missing commentary for historical recordings. Results are cached as versioned JSON sidecars under `runs/commentary/`; SQLite recordings are never modified.
+
+The default commentator is Claude Haiku through the local `claude-code` subscription, independent of the gameplay backend. This keeps narration inexpensive and lets OpenAI recordings be narrated without an OpenAI credential. Setting commentator backend and model to `same` opts into the recorded gameplay model instead.
 
 ## 12. Tech stack and repo layout
 

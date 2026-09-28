@@ -93,8 +93,8 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   commentator: {
     enabled: false,
     interval_ticks: 10,
-    backend: "same",
-    model: "same",
+    backend: "claude-code",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 1200,
     reasoning_effort: "low",
   },

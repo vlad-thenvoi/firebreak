@@ -162,6 +162,8 @@ describe("config", () => {
     expect(config.llm.model).toMatch(/haiku/);
     expect(config.fire.base_spread).toBe(0.1);
     expect(config.fire.growth_every).toBe(5);
+    expect(config.commentator.backend).toBe("claude-code");
+    expect(config.commentator.model).toMatch(/haiku/);
   });
 
   it("redacts secret-looking keys", () => {
