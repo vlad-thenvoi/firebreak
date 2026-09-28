@@ -13,7 +13,7 @@ declare global {
 const app = document.getElementById("app")!;
 const params = new URLSearchParams(location.search);
 
-function play(bundle: RecordingBundle, name?: string) {
+function play(bundle: RecordingBundle, name?: string, commentaryError?: string) {
   const tl = new Timeline(bundle.header);
   for (const f of bundle.frames) tl.add(f);
   new Player(app, tl, {
@@ -22,6 +22,7 @@ function play(bundle: RecordingBundle, name?: string) {
     ...(params.has("speed") ? { speed: Number(params.get("speed")) } : {}),
     paused: params.has("paused"),
     ...(name ? { recordingName: name, fetchPrompt: (id: string) => fetchPrompt(name, id) } : {}),
+    ...(commentaryError ? { commentaryError } : {}),
   });
 }
 
@@ -113,7 +114,24 @@ async function boot() {
       app.innerHTML = `<div class="index"><h1>Recording not found</h1><p><a href="/">Back</a></p></div>`;
       return;
     }
-    return play((await r.json()) as RecordingBundle, rec);
+    const bundle = (await r.json()) as RecordingBundle;
+    let commentaryError: string | undefined;
+    if (!bundle.frames.some((f) => f.kind === "commentary")) {
+      app.innerHTML = `<div class="index"><h1>Preparing ${rec}…</h1><p class="meta">Generating and saving the omniscient broadcast for this historical replay. The match recording will not be changed.</p></div>`;
+      try {
+        const generated = await fetch(`/api/recordings/${encodeURIComponent(rec)}/commentary`, {
+          method: "POST",
+        });
+        if (!generated.ok) {
+          const body = (await generated.json()) as { error?: string };
+          throw new Error(body.error ?? `HTTP ${generated.status}`);
+        }
+        bundle.frames.push(...((await generated.json()) as StreamFrame[]));
+      } catch (e) {
+        commentaryError = e instanceof Error ? e.message : String(e);
+      }
+    }
+    return play(bundle, rec, commentaryError);
   }
   if (params.has("live")) return live();
   return index();

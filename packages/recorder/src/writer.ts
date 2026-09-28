@@ -116,6 +116,8 @@ export class RecordingWriter implements FrameSink {
           );
         log("llm", f.id);
         break;
+      case "commentary":
+        throw new Error("commentary belongs in a replay sidecar, not the immutable match recording");
       case "end":
         this.finish(f);
         break;

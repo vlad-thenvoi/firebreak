@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,6 +21,7 @@ import {
 import { PeerTeam, SubagentTeam, botsNone, botsPerfect, chatBroadcast, chatMentions } from "@firebreak/teams";
 import { z } from "zod";
 import { verifyRecording } from "../src/verify";
+import { commentaryPath, ensureCommentary, loadReplayBundle, loadSavedCommentary } from "../src/commentary";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "firebreak-test-"));
 
@@ -39,7 +40,19 @@ class FakeLlm implements LlmClient {
       tool_calls.push({ name, input, result: r.text });
     };
     const tick = Number(/TICK (\d+)/.exec(req.user)?.[1] ?? 0);
-    if (names.has("spawn")) {
+    if (names.has("publish_broadcast")) {
+      const requested = /Publish exactly these checkpoint ticks: ([\d, ]+)/.exec(req.user)?.[1] ?? "0";
+      const ticks = requested.split(",").map((x) => Number(x.trim()));
+      await call("publish_broadcast", {
+        segments: ticks.map((t) => ({
+          tick: t,
+          headline: `Firebreak update at tick ${t}`,
+          situation: "The commentator can see the complete fire map and every civilian.",
+          teamwork: "The team is coordinating its current orders.",
+          verdict: "Protect the nearest threatened house next.",
+        })),
+      });
+    } else if (names.has("spawn")) {
       for (const body of ["scout", "ff1"])
         if (
           !req.user.includes(`${body} (`) ||
@@ -216,6 +229,37 @@ describe("LLM teams (fake model)", () => {
     expect(targeted.every((m) => m.to.length === 1)).toBe(true);
     expect(broadcast.every((m) => m.to.length === 4)).toBe(true);
     expect(broadcast.every((m) => (m.meta?.addressed_to as string[]).length === 1)).toBe(true);
+    expect(verifyRecording(file).ok).toBe(true);
+  });
+
+  it("generates, saves, and reuses omniscient commentary without modifying the recording", async () => {
+    const gameplay = new FakeLlm();
+    const fake: TeamFactory = {
+      type: "fake-peer",
+      label: "Fake",
+      usesLlm: true,
+      create: () => new PeerTeam({ transport: new FakeTransport(), view: "self" }),
+    };
+    const { file } = await record([fake], 2, gameplay);
+    const before = readFileSync(file);
+    const cacheDir = join(tmp(), "commentary");
+    const commentator = new FakeLlm();
+    const generated = await ensureCommentary(file, { llm: commentator, cacheDir });
+    expect(generated).toHaveLength(1);
+    expect(generated[0]!.segments.map((s) => s.tick)).toEqual([0, 2]);
+    expect(generated[0]!.prompt).toContain("full_map_rows");
+    expect(generated[0]!.prompt).toContain("heading north");
+    expect(existsSync(commentaryPath(loadBundle(file).header, cacheDir))).toBe(true);
+    expect(readFileSync(file).equals(before)).toBe(true);
+
+    const calls = commentator.calls;
+    const reused = await ensureCommentary(file, { llm: commentator, cacheDir });
+    expect(commentator.calls).toBe(calls);
+    expect(reused).toEqual(generated);
+    expect(loadSavedCommentary(file, loadBundle(file), cacheDir)).toEqual(generated);
+    expect(loadReplayBundle(file, { cacheDir }).frames.filter((f) => f.kind === "commentary")).toEqual(
+      generated,
+    );
     expect(verifyRecording(file).ok).toBe(true);
   });
 

@@ -122,6 +122,13 @@ export function renderRulesPage(root: HTMLElement): void {
       <tr><td>Subagents</td><td>An orchestrator spawns isolated workers for physical bodies. A worker cannot receive updates or talk to peers; it reports once when finished or expired. A replacement has fresh memory but inherits the body's current position and state.</td></tr>
     </tbody></table></div></section>
 
+    <section><h2>AI broadcast booth</h2><div class="rule-cards">
+      <article><h3>Full-information observer</h3><p>The commentator sees the complete map, every fire and civilian, all agent orders, and every sent message regardless of who received it.</p></article>
+      <article><h3>Plain-language analysis</h3><p>At replay checkpoints it explains the fire situation, what the team is coordinating, and whether its current priorities make sense.</p></article>
+      <article><h3>Outside the experiment</h3><p>The broadcast is generated only after the outcome is fixed. It cannot advise players, change latency or score, or enter competitive model-cost metrics.</p></article>
+      <article><h3>Saved for replay</h3><p>Historical matches generate a versioned commentary sidecar on first open. The original SQLite recording remains unchanged and verifiable.</p></article>
+    </div></section>
+
     <section class="reference-legend"><h2>Viewer legend</h2>${legendSections()}</section>
     <footer>Defaults shown here describe the standard scenario. Every recording stores its exact resolved configuration and prompts.</footer>
   </main>`;

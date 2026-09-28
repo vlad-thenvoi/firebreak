@@ -8,7 +8,8 @@ import { verifyRecording } from "./verify";
 const HELP = `firebreak — multi-agent communication showdown
 
 Usage:
-  firebreak run [--config FILE] [--seed N] [--teams a,b,c] [--set key=value]... [--virtual] [--config-from MATCH] [--live] [--port N]
+  firebreak run [--config FILE] [--seed N] [--teams a,b,c] [--set key=value]... [--commentary] [--virtual] [--config-from MATCH] [--live] [--port N]
+  firebreak commentate MATCH              generate and save omniscient replay commentary
   firebreak verify MATCH
   firebreak metrics MATCH                 per-team metrics as JSON (SPEC §10)
   firebreak list
@@ -48,6 +49,7 @@ async function main(argv: string[]): Promise<number> {
       yes: { type: "boolean", short: "y" },
       prompts: { type: "boolean" },
       open: { type: "boolean" },
+      commentary: { type: "boolean" },
     },
   });
   const cwd = process.env.INIT_CWD ?? process.cwd();
@@ -56,6 +58,7 @@ async function main(argv: string[]): Promise<number> {
     ...(values["config-from"] ? { configFrom: matchPath(values["config-from"]) } : {}),
     ...(values.seed ? { seed: Number(values.seed) } : {}),
     ...(values.teams ? { teams: values.teams.split(",").map((s) => s.trim()) } : {}),
+    ...(values.commentary ? { commentary: true } : {}),
     sets: values.set ?? [],
     virtual: values.virtual ?? false,
     cliArgs: argv,
@@ -115,6 +118,17 @@ async function main(argv: string[]): Promise<number> {
       console.log(JSON.stringify(computeMetrics(matchPath(p)), null, 2));
       return 0;
     }
+    case "commentate": {
+      const p = positionals[0];
+      if (!p) throw new Error("commentate needs a MATCH");
+      const { commentaryPath, ensureCommentary } = await import("./commentary");
+      const recording = matchPath(p);
+      const commentaryConfig = loadResolvedConfig({ ...runArgs, configFrom: recording }).config;
+      const frames = await ensureCommentary(recording, { config: commentaryConfig });
+      const bundle = (await import("@firebreak/recorder")).loadBundle(recording);
+      console.log(`saved ${frames.length} team broadcasts: ${commentaryPath(bundle.header)}`);
+      return 0;
+    }
     case "list": {
       for (const s of RECORDING_DIRS.flatMap((d) => listRecordings(d))) {
         console.log(
@@ -140,7 +154,7 @@ async function main(argv: string[]): Promise<number> {
       const { exportHtml } = await import("./export");
       const p = positionals[0];
       if (!p) throw new Error("export needs a MATCH");
-      const out = exportHtml(matchPath(p), values.out ? resolve(cwd, values.out) : undefined, {
+      const out = await exportHtml(matchPath(p), values.out ? resolve(cwd, values.out) : undefined, {
         prompts: values.prompts ?? false,
       });
       console.log(`wrote ${out}`);

@@ -15,12 +15,14 @@ import {
 } from "@firebreak/runtime";
 import { teamFactory } from "@firebreak/teams";
 import { REPO_ROOT } from "./paths";
+import { ensureCommentary } from "./commentary";
 
 export interface RunArgs {
   configPath?: string;
   configFrom?: string;
   seed?: number;
   teams?: string[];
+  commentary?: boolean;
   sets: string[];
   virtual: boolean;
   cliArgs: string[];
@@ -35,6 +37,7 @@ export function loadResolvedConfig(a: RunArgs): ResolvedConfig {
   }
   if (a.seed !== undefined) overrides.seed = a.seed;
   if (a.teams) overrides.teams = a.teams;
+  if (a.commentary) setPath(overrides, "commentator.enabled", "true");
   let base: unknown = undefined;
   if (a.configFrom) {
     const db = openRecording(a.configFrom);
@@ -93,13 +96,24 @@ export async function runMatch(
   for (const s of opts.extraSinks ?? []) (s as { begin?: (h: typeof header) => void }).begin?.(header);
   const onSig = () => runner.abort("interrupted");
   process.once("SIGINT", onSig);
+  let result: MatchResult;
   try {
-    const result = await runner.run();
-    return { file, result };
+    result = await runner.run();
   } finally {
     process.off("SIGINT", onSig);
     writer.close();
   }
+  if (config.commentator.enabled) {
+    opts.log?.("generating replay commentary (post-match; gameplay is already fixed)…");
+    try {
+      const commentary = await ensureCommentary(file, { config });
+      for (const frame of commentary) for (const sink of opts.extraSinks ?? []) sink.write(frame);
+      opts.log?.(`saved ${commentary.length} team broadcasts`);
+    } catch (e) {
+      opts.log?.(`commentary generation failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  return { file, result };
 }
 
 export function relRuns(file: string): string {

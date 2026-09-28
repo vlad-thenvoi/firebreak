@@ -36,6 +36,9 @@ pnpm firebreak run --live
 pnpm firebreak run --teams chat-mentions,chat-broadcast --seed 7 --set ticks=30
 pnpm firebreak run --set llm.backend=openai --set llm.model=gpt-5.6-luna
 
+# Generate an omniscient, human-friendly broadcast after play (one model call per team)
+pnpm firebreak run --commentary
+
 # Scripted bots, instant (no LLM)
 pnpm firebreak run --teams bots-none,bots-perfect --virtual
 ```
@@ -51,12 +54,17 @@ pnpm firebreak verify 20260927-184427-s13-mmr7.sqlite   # re-run the engine, com
 pnpm firebreak metrics 20260927-184427-s13-mmr7.sqlite  # per-team metrics as JSON
 pnpm firebreak report recordings/*.sqlite               # HTML summary across several matches
 pnpm firebreak export 20260927-184427-s13-mmr7.sqlite   # single offline HTML file to share
+pnpm firebreak commentate 20260927-184427-s13-mmr7.sqlite # generate/save broadcast now
 pnpm firebreak run --config-from 20260927-184427-s13-mmr7.sqlite --seed 14   # same setup, new seed
 ```
 
-Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team.
+Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team. Every board also has an **AI Broadcast** section that explains the fire situation, communication, teamwork, and decision quality in plain language.
 
-A recording holds everything needed to replay and analyse a match without calling a model:
+The commentator is an omniscient observer, not a sixth player. It sees the full current map and every message the team sent, even when that team's transport did not deliver the message. To protect experimental fairness, it runs only after the outcome is fixed and its tokens/cost never enter team metrics. `--commentary` generates it eagerly; opening or exporting any historical replay without commentary generates it automatically using that recording's provider/model settings and currently available credentials.
+
+Commentary is saved under `runs/commentary/` as a versioned sidecar and merged into replay data. The SQLite match is never edited, so its hashes and verification remain authoritative. If provider credentials are unavailable, the match still replays and the broadcast panel shows the generation error.
+
+A recording holds everything needed to replay and analyse gameplay without calling a model. Human-facing commentary is a derived, cached sidecar and may require one model call per team the first time an older match is opened:
 
 | Table                  | Contents                                                                                                                         |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |

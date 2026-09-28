@@ -1,4 +1,6 @@
 import type {
+  CommentaryFrame,
+  CommentarySegment,
   DeliveryFrame,
   EndFrame,
   EventFrame,
@@ -23,6 +25,7 @@ export interface WorldTimeline {
   events: EventFrame[];
   messages: MessageView[];
   llm: LlmFrame[];
+  commentary: CommentaryFrame[];
 }
 
 const STALE_REASONS = new Set([
@@ -54,6 +57,7 @@ export class Timeline {
         events: [],
         messages: [],
         llm: [],
+        commentary: [],
       });
     }
   }
@@ -92,6 +96,9 @@ export class Timeline {
       }
       case "llm":
         w.llm.push(f);
+        break;
+      case "commentary":
+        w.commentary.push(f);
         break;
     }
   }
@@ -181,6 +188,26 @@ export class Timeline {
       if (c.agent_id === agent && c.ended_ms <= t) return c;
     }
     return null;
+  }
+
+  commentaryAt(
+    w: WorldTimeline,
+    t: number,
+  ): (CommentarySegment & { model: string; cost_usd: number; error?: string }) | null {
+    let best: (CommentarySegment & { model: string; cost_usd: number; error?: string }) | null = null;
+    for (const call of w.commentary) {
+      for (const segment of call.segments) {
+        if (segment.t_ms <= t && (!best || segment.t_ms >= best.t_ms)) {
+          best = {
+            ...segment,
+            model: call.model,
+            cost_usd: call.cost_usd,
+            ...(call.error ? { error: call.error } : {}),
+          };
+        }
+      }
+    }
+    return best;
   }
 
   /** Markers for the scrubber: notable events across all worlds. */

@@ -369,9 +369,16 @@ band: { agents_file: band_agents.yaml, rest_url: https://app.band.ai, ws_url: ws
 record: { dir: runs, prompts: true }
 agent: { message_window: 30, heartbeat_ticks: 3, order_log: 5, max_decisions_per_tick: 3 }
 subagents: { max_lifetime_ticks: 8 }
+commentator: { enabled: false, interval_ticks: 10, backend: same, model: same, max_tokens: 1200, reasoning_effort: low }
 ```
 
 Every knob in section 4 is configurable, so difficulty can be tuned.
+
+### 11.1 Replay commentator
+
+The optional commentator is a derived replay layer, never a team member. For each world it receives omniscient checkpoints containing the complete current map and entities, agent state and orders, world events, and every message sent by that team regardless of transport delivery. One post-match model call publishes timestamped, plain-language segments covering the fire situation, teamwork/communication, and decision quality.
+
+Commentary runs only after gameplay has finished, is excluded from team budgets and metrics, and is never delivered to an agent. `run --commentary` generates it eagerly. The viewer, `export`, or `commentate` command generates missing commentary for historical recordings. Results are cached as versioned JSON sidecars under `runs/commentary/`; SQLite recordings are never modified.
 
 ## 12. Tech stack and repo layout
 

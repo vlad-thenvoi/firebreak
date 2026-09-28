@@ -12,6 +12,7 @@ interface Card {
   score: HTMLElement;
   counters: HTMLElement;
   ticker: HTMLElement;
+  commentary: HTMLElement;
   results: HTMLElement;
   hits: HitTarget[];
   visible: boolean;
@@ -26,6 +27,8 @@ export interface PlayerOptions {
   startAt?: number;
   paused?: boolean;
   speed?: number;
+  /** Non-fatal automatic commentary-generation failure. */
+  commentaryError?: string;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
@@ -116,7 +119,9 @@ export class Player {
       wrap.append(canvas, results);
       const counters = el("div", "counters");
       const ticker = el("div", "ticker");
-      card.append(head, wrap, counters, ticker);
+      const commentary = el("section", "commentary");
+      commentary.innerHTML = `<div class="commentary-head"><span>AI BROADCAST</span><span class="commentary-status">post-match observer</span></div><div class="commentary-body meta">Waiting for commentary…</div>`;
+      card.append(head, wrap, counters, ticker, commentary);
       this.boardsEl.append(card);
       const c: Card = {
         world: w,
@@ -125,6 +130,7 @@ export class Player {
         score,
         counters,
         ticker,
+        commentary,
         results,
         hits: [],
         visible: true,
@@ -197,7 +203,7 @@ export class Player {
     const box = this.boardsEl.getBoundingClientRect();
     const W = box.width - 24;
     const H = box.height - 24;
-    const chrome = 165; // card header + counters + ticker
+    const chrome = 300; // card header + counters + message ticker + broadcast booth
     let best = { cols: 1, size: 0 };
     for (let cols = 1; cols <= n; cols++) {
       const rows = Math.ceil(n / cols);
@@ -361,6 +367,22 @@ export class Player {
             )
             .join("")
         : `<div>${c.world.team.startsWith("none") || c.world.team === "perfect" ? "no messages on this team" : "no messages yet"}</div>`;
+      const commentary = this.tl.commentaryAt(c.world, t);
+      const body = c.commentary.querySelector(".commentary-body")!;
+      const status = c.commentary.querySelector(".commentary-status")!;
+      if (commentary) {
+        status.textContent = `tick ${commentary.tick} · ${commentary.model} · $${commentary.cost_usd.toFixed(3)} total`;
+        body.className = "commentary-body";
+        body.innerHTML = `<strong>${esc(commentary.headline)}</strong><p>${esc(commentary.situation)}</p><p><b>Teamwork:</b> ${esc(commentary.teamwork)}</p><p><b>Analyst:</b> ${esc(commentary.verdict)}</p>${commentary.error ? `<p class="commentary-error">${esc(commentary.error)}</p>` : ""}`;
+      } else {
+        status.textContent = "post-match observer";
+        body.className = "commentary-body meta";
+        body.textContent =
+          this.o.commentaryError ??
+          (this.o.mode === "live"
+            ? "The broadcast is generated after the outcome is fixed, then saved with the replay."
+            : "No broadcast checkpoint yet.");
+      }
       const ended =
         f.cur.ended && f.tick === this.tl.maxTick(c.world) && t >= this.tl.tickTime(c.world, f.tick);
       c.results.style.display = ended ? "flex" : "none";

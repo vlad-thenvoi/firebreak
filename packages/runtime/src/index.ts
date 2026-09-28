@@ -5,6 +5,7 @@ export * from "./team";
 export * from "./transport";
 export * from "./match";
 export * from "./provenance";
+export * from "./commentator";
 export * from "./llm/types";
 export { AnthropicApiClient, jsonSchema } from "./llm/anthropic-api";
 export { ClaudeCodeClient } from "./llm/claude-code";

@@ -42,6 +42,15 @@ export interface MatchConfig {
     max_decisions_per_tick: number;
   };
   subagents: { max_lifetime_ticks: number };
+  commentator: {
+    enabled: boolean;
+    interval_ticks: number;
+    /** "same" inherits the gameplay backend/model. */
+    backend: LlmBackend | "same";
+    model: string;
+    max_tokens: number;
+    reasoning_effort: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+  };
   band: { agents_file: string; rest_url: string; ws_url: string };
   record: { dir: string; prompts: boolean };
 }
@@ -81,6 +90,14 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   },
   agent: { message_window: 30, heartbeat_ticks: 3, order_log: 5, max_decisions_per_tick: 3 },
   subagents: { max_lifetime_ticks: 8 },
+  commentator: {
+    enabled: false,
+    interval_ticks: 10,
+    backend: "same",
+    model: "same",
+    max_tokens: 1200,
+    reasoning_effort: "low",
+  },
   band: {
     agents_file: "band_agents.yaml",
     rest_url: "https://app.band.ai",
@@ -156,6 +173,11 @@ export function validateConfig(c: MatchConfig): void {
   if (!["api", "claude-code", "openai"].includes(c.llm.backend))
     throw new Error(`unknown llm.backend ${c.llm.backend}`);
   if (c.teams.length === 0) throw new Error("teams must not be empty");
+  if (!Number.isInteger(c.commentator.interval_ticks) || c.commentator.interval_ticks < 1)
+    throw new Error("commentator.interval_ticks must be an integer >= 1");
+  if (c.commentator.max_tokens < 1) throw new Error("commentator.max_tokens must be >= 1");
+  if (c.commentator.backend !== "same" && !["api", "claude-code", "openai"].includes(c.commentator.backend))
+    throw new Error(`unknown commentator.backend ${c.commentator.backend}`);
 }
 
 const SECRET_KEY = /(api[_-]?key|token|secret|password|authorization)/i;

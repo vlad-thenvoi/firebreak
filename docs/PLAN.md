@@ -20,6 +20,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 | M7 Sub-agent team | done | orchestrator + spawn/report, hub-and-spoke in the viewer |
 | M8 Metrics and batch | done | metrics as SQL over recordings; `batch`, `report` |
 | M9 Demo polish | done | `export`, focus-on-one-team mode, 2×2 layout; showcase: `showcase/seed-11-four-teams.html` |
+| M9b Replay commentator | done | omniscient post-match broadcast, persisted sidecars, automatic historical generation |
 
 ---
 
