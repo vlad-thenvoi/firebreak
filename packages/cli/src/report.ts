@@ -146,10 +146,10 @@ th:first-child,td:first-child{text-align:left}thead th{font-weight:700}td.best{b
 <h1>FIRE<b>BREAK</b> report</h1>
 <p class="muted">${scored.length} completed match${scored.length === 1 ? "" : "es"}${skipped.length ? `, ${skipped.length} aborted and excluded` : ""} · LLM ${esc(backends.join(", ") || "none")} · generated ${new Date().toLocaleString()}</p>
 ${backends.length > 1 ? `<p><b>Warning:</b> these matches used different LLM backends; compare within one backend only.</p>` : ""}
-<h2>Summary (mean ± standard deviation across seeds)</h2>
+<h2>Summary (mean ± standard deviation across recordings)</h2>
 <div class="wrap"><table><thead><tr><th>Metric</th>${teams.map((t) => `<th>${esc(labels.get(t) ?? t)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
 <p class="muted">Relative score = (mean team − mean no-communication) / (mean perfect − mean no-communication): the share of the possible coordination gain a team captured. It is only meaningful when the perfect team clearly beats the no-communication team. Highlighted cells are the best mean per metric.</p>
-<h2>Scores per seed</h2>
+<h2>Scores per recording</h2>
 <div class="wrap"><table><thead><tr><th>Seed</th>${teams.map((t) => `<th>${esc(labels.get(t) ?? t)}</th>`).join("")}<th>Match</th></tr></thead><tbody>${perSeed}</tbody></table></div>
 ${skipped.length ? `<h2>Excluded</h2><ul>${skipped.map((m) => `<li>${esc(m.match_id)}: ${esc(m.abort_reason ?? m.status)}</li>`).join("")}</ul>` : ""}
 </body></html>`;

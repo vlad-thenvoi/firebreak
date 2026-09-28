@@ -105,3 +105,31 @@ The OpenAI path uses `store: false`, replays all response items only inside a va
 Each requested production repetition uses seed `42`. Every match contains `none`, `perfect`, `chat-mentions`, and `chat-broadcast`, and `MatchRunner` constructs one scenario from that seed and gives the identical initial world and event schedule to all four teams. Using seed `42` for every Claude Opus 5.5 and GPT-5.6 Sol repetition keeps the world fixed across providers as well; only model sampling and the communication condition can vary. The recording header stores the seed, complete scenario, model, prompt version, and tool definitions so this pairing is auditable.
 
 For a later statistical study, use several seeds but keep the same seed list for every model and condition (paired blocks). A single fixed seed is ideal for this requested apples-to-apples replay set, but it does not measure performance across different maps.
+
+### Seed 42 advanced-model repetitions
+
+Four 60-tick repetitions per model used prompt v4, low reasoning effort, a 1,024-token output cap, and the same five conditions. `chat-mentions` and `chat-broadcast` are the local simulated Band-style rooms, not real Band infrastructure. All eight recordings completed and replay-verified.
+
+| Model | Repetition | None | Perfect | Sub-agents | Mentions | Broadcast | Winner |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Claude Opus 5.5 | 1 | -5 | 85 | 51 | 51 | 63 | Perfect |
+| Claude Opus 5.5 | 2 | -4 | 73 | 50 | 61 | 51 | Perfect |
+| Claude Opus 5.5 | 3 | -9 | 20 | 44 | 36 | 54 | Broadcast |
+| Claude Opus 5.5 | 4 | 1 | 82 | 47 | 55 | 12 | Perfect |
+| GPT-5.6 Sol | 1 | -11 | 48 | 53 | 52 | 50 | Sub-agents |
+| GPT-5.6 Sol | 2 | 31 | 15 | 10 | 56 | 51 | Mentions |
+| GPT-5.6 Sol | 3 | -12 | 49 | 43 | 48 | 15 | Perfect |
+| GPT-5.6 Sol | 4 | -3 | 53 | 17 | 52 | 49 | Perfect |
+
+Model-specific score summaries (mean ± sample standard deviation):
+
+| Model | None | Perfect | Sub-agents | Mentions | Broadcast |
+|---|---:|---:|---:|---:|---:|
+| Claude Opus 5.5 | -4.3 ± 4.1 | **65.0 ± 30.4** | 48.0 ± 3.2 | 50.8 ± 10.7 | 45.0 ± 22.6 |
+| GPT-5.6 Sol | 1.3 ± 20.2 | 41.3 ± 17.6 | 30.8 ± 20.5 | **52.0 ± 3.3** | 41.3 ± 17.5 |
+
+Across the eight equally weighted recordings, perfect won 5, and sub-agents, mentions, and broadcast won 1 each; none won 0. The descriptive combined means were perfect 53.1, mentions 51.4, broadcast 43.1, sub-agents 39.4, and none -1.5. Keep the model-specific tables as the formal comparison: mixing backends can hide model/transport interactions.
+
+The main mechanism result is clearer than the overall winner count. Mentions beat broadcast head-to-head in all four Sol repetitions and 6 of 8 recordings overall. Broadcast woke every peer, producing more LLM calls and noise: mean noise was 50% for Opus and 61% for Sol, versus 0% for targeted mentions. It was also the most expensive condition. Total recorded API cost for the eight matches was approximately $87.08 ($50.67 Opus, $36.41 Sol).
+
+These repetitions estimate model sampling variance on one fixed world. They do not establish performance across wildfire maps; that requires paired multi-seed blocks.
