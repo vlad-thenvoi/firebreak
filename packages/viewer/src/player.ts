@@ -1,7 +1,7 @@
 import { formatOrder, type LlmFrame } from "@firebreak/engine";
 import { compactRoleLegend, createLegendDialog, rulesHref } from "./reference";
 import { HQ_ID, drawBoard, type HitTarget } from "./render";
-import type { Timeline, WorldTimeline } from "./timeline";
+import type { OutcomeMetric, Timeline, WorldTimeline } from "./timeline";
 
 const SPEEDS = [0.5, 1, 2, 4, 10];
 const TIMELINE_MARKERS = {
@@ -12,11 +12,24 @@ const TIMELINE_MARKERS = {
   bridge_collapsed: { color: "#c792ea", label: "bridge collapsed" },
 } as const;
 
+const CHART_METRICS: Record<OutcomeMetric, { label: string; help: string; better: "high" | "low" }> = {
+  score: { label: "Score", help: "Total points at each tick", better: "high" },
+  extinguished: { label: "Fires out", help: "Cumulative fire tiles extinguished", better: "high" },
+  active_fires: { label: "Active fires", help: "Fire tiles currently burning", better: "low" },
+  evacuated: { label: "Civilians saved", help: "Cumulative civilian evacuations", better: "high" },
+  lost: { label: "Civilians lost", help: "Cumulative civilian losses", better: "low" },
+  houses_standing: { label: "Houses standing", help: "Houses still standing", better: "high" },
+  houses_destroyed: { label: "Houses destroyed", help: "Cumulative houses destroyed", better: "low" },
+};
+
+const TEAM_COLORS = ["#ff7a3d", "#7cfc9a", "#c792ea", "#5bc0eb", "#ffd166", "#ff6b9d"];
+
 interface Card {
   world: WorldTimeline;
   root: HTMLElement;
   canvas: HTMLCanvasElement;
   score: HTMLElement;
+  outcomes: HTMLElement;
   counters: HTMLElement;
   ticker: HTMLElement;
   commentary: HTMLElement;
@@ -67,6 +80,12 @@ export class Player {
   private badge!: HTMLElement;
   private legend!: HTMLDialogElement;
   private broadcastDialog!: HTMLDialogElement;
+  private chartCanvas!: HTMLCanvasElement;
+  private chartValues!: HTMLElement;
+  private chartMetric: OutcomeMetric = "score";
+  private chartWorlds = new Set<string>();
+  private chartMetricButtons = new Map<OutcomeMetric, HTMLButtonElement>();
+  private chartRenderKey = "";
 
   constructor(
     private root: HTMLElement,
@@ -131,6 +150,7 @@ export class Player {
       results.style.display = "none";
       wrap.append(canvas, results);
       const counters = el("div", "counters");
+      const outcomes = el("div", "outcomes");
       const ticker = el("div", "ticker");
       const commentary = el("section", "commentary");
       const commentaryHead = el("div", "commentary-head");
@@ -143,13 +163,14 @@ export class Player {
       commentaryActions.append(readCommentary);
       commentaryHead.append(commentaryActions);
       commentary.append(commentaryHead, el("div", "commentary-body meta", "Waiting for commentary…"));
-      card.append(head, wrap, counters, ticker, commentary);
+      card.append(head, wrap, outcomes, counters, ticker, commentary);
       this.boardsEl.append(card);
       const c: Card = {
         world: w,
         root: card,
         canvas,
         score,
+        outcomes,
         counters,
         ticker,
         commentary,
@@ -174,6 +195,8 @@ export class Player {
       lbl.append(cb, document.createTextNode(w.label));
       toggles.append(lbl);
     }
+
+    this.buildOutcomeChart();
 
     const controls = el("div", "controls");
     this.playBtn = el("button", "", "❚❚");
@@ -233,13 +256,67 @@ export class Player {
     requestAnimationFrame(() => this.layout());
   }
 
+  private buildOutcomeChart() {
+    const section = el("section", "outcome-chart");
+    const heading = el("div", "outcome-chart-heading");
+    const title = el("div");
+    title.append(
+      el("h2", "", "Outcome over time"),
+      el("p", "meta", "Compare communication styles at every tick."),
+    );
+    const metricControls = el("div", "chart-metrics");
+    for (const [key, config] of Object.entries(CHART_METRICS) as [
+      OutcomeMetric,
+      (typeof CHART_METRICS)[OutcomeMetric],
+    ][]) {
+      const button = el("button", key === this.chartMetric ? "on" : "", config.label);
+      button.type = "button";
+      button.title = config.help;
+      button.addEventListener("click", () => {
+        this.chartMetric = key;
+        for (const [metric, candidate] of this.chartMetricButtons)
+          candidate.classList.toggle("on", metric === key);
+        this.drawOutcomeChart();
+      });
+      this.chartMetricButtons.set(key, button);
+      metricControls.append(button);
+    }
+    heading.append(title, metricControls);
+
+    const teamControls = el("div", "chart-teams");
+    this.cards.forEach((card, index) => {
+      this.chartWorlds.add(card.world.id);
+      const label = el("label");
+      const checkbox = el("input") as HTMLInputElement;
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) this.chartWorlds.add(card.world.id);
+        else this.chartWorlds.delete(card.world.id);
+        this.drawOutcomeChart();
+      });
+      const swatch = el("i");
+      swatch.style.background = TEAM_COLORS[index % TEAM_COLORS.length]!;
+      label.append(checkbox, swatch, document.createTextNode(card.world.label));
+      teamControls.append(label);
+    });
+
+    const plot = el("div", "chart-plot");
+    this.chartCanvas = el("canvas");
+    this.chartCanvas.setAttribute("aria-label", "Team outcomes by tick");
+    plot.append(this.chartCanvas);
+    this.chartValues = el("div", "chart-values");
+    section.append(heading, teamControls, plot, this.chartValues);
+    this.boardsEl.append(section);
+  }
+
   private layout() {
     const visible = this.focused ? [this.focused] : this.cards.filter((c) => c.visible);
     const n = Math.max(1, visible.length);
     const box = this.boardsEl.getBoundingClientRect();
     const W = box.width - 24;
     const H = box.height - 24;
-    const chrome = 365; // card header + counters + message ticker + broadcast booth
+    const chrome = 425; // card header + outcomes + counters + message ticker + broadcast booth
     let best = { cols: 1, size: 0 };
     for (let cols = 1; cols <= n; cols++) {
       const rows = Math.ceil(n / cols);
@@ -259,6 +336,7 @@ export class Player {
     const r = this.scrubMarks.getBoundingClientRect();
     this.scrubMarks.width = Math.round(r.width * dpr);
     this.scrubMarks.height = Math.round(r.height * dpr);
+    this.drawOutcomeChart();
     this.lastVersion = -1;
   }
 
@@ -385,15 +463,59 @@ export class Player {
         leader = c;
       }
       const k = this.tl.counters(c.world, t, f.tick);
-      const counter = (v: string | number, label: string) =>
-        `<div class="counter"><b>${v}</b><span>${label}</span></div>`;
+      const counter = (v: string | number, label: string, title = "") =>
+        `<div class="counter"${title ? ` title="${title}"` : ""}><b>${v}</b><span>${label}</span></div>`;
+      const outcome = f.cur.score;
+      const missionStat = (v: number, label: string, tone: "good" | "bad" | "neutral", title: string) =>
+        `<div class="outcome ${tone}" title="${title}"><b>${v}</b><span>${label}</span></div>`;
+      c.outcomes.innerHTML =
+        missionStat(
+          outcome.evacuated,
+          `saved +${outcome.evacuated * 10}`,
+          "good",
+          "Civilians evacuated: 10 points each.",
+        ) +
+        missionStat(
+          outcome.lost,
+          `lost −${outcome.lost * 20}`,
+          "bad",
+          "Civilians lost: minus 20 points each.",
+        ) +
+        missionStat(
+          outcome.extinguished,
+          `fires out +${outcome.extinguished}`,
+          "good",
+          "Fire tiles extinguished: 1 point each.",
+        ) +
+        missionStat(
+          f.cur.fires.length,
+          "fires active",
+          f.cur.fires.length ? "bad" : "good",
+          "Fire tiles currently burning. This is not directly scored.",
+        ) +
+        missionStat(
+          outcome.houses_standing,
+          `standing +${outcome.houses_standing * 5}`,
+          "good",
+          "Houses still standing: 5 points each at match end.",
+        ) +
+        missionStat(
+          outcome.houses_destroyed,
+          "destroyed",
+          outcome.houses_destroyed ? "bad" : "neutral",
+          "Houses destroyed. Each one removes the opportunity to earn 5 end-of-match points.",
+        );
       c.counters.innerHTML =
         counter(`$${k.cost.toFixed(2)}`, "cost") +
         counter(k.calls, "LLM calls") +
         counter(k.messages, "messages") +
         counter(k.stale, "stale actions") +
         counter(k.idle, "idle agent-ticks") +
-        counter(k.joint, "missed joint");
+        counter(
+          k.joint,
+          "missed joint",
+          "Ticks where only one firefighter tried an intensity-3 fire; two are required in the same tick.",
+        );
       const recent = this.tl.recentMessages(c.world, t, 3);
       c.ticker.innerHTML = recent.length
         ? recent
@@ -432,7 +554,147 @@ export class Player {
     const secs = (t / 1000).toFixed(1);
     this.clockEl.textContent = `tick ${tickShown} / ${this.tl.header.ticks} · ${secs}s · ${this.speed}×`;
     this.drawMarks();
+    this.drawOutcomeChart();
     this.renderInspector(t);
+  }
+
+  private drawOutcomeChart() {
+    if (!this.chartCanvas || !this.chartValues) return;
+    const rect = this.chartCanvas.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    const dpr = window.devicePixelRatio || 1;
+    const pixelWidth = Math.round(rect.width * dpr);
+    const pixelHeight = Math.round(rect.height * dpr);
+    if (this.chartCanvas.width !== pixelWidth || this.chartCanvas.height !== pixelHeight) {
+      this.chartCanvas.width = pixelWidth;
+      this.chartCanvas.height = pixelHeight;
+    }
+    const ctx = this.chartCanvas.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const width = rect.width;
+    const height = rect.height;
+
+    const selected = this.cards
+      .map((card, index) => ({ card, index }))
+      .filter(({ card }) => this.chartWorlds.has(card.world.id));
+    const reference = selected[0]?.card.world;
+    const currentTick = reference ? (this.tl.frameAt(reference, this.t)?.tick ?? 0) : 0;
+    const renderKey = [
+      this.tl.version,
+      this.chartMetric,
+      [...this.chartWorlds].join(","),
+      currentTick,
+      pixelWidth,
+      pixelHeight,
+    ].join("|");
+    if (renderKey === this.chartRenderKey) return;
+    this.chartRenderKey = renderKey;
+    ctx.clearRect(0, 0, width, height);
+    const series = selected.map(({ card, index }) => ({
+      card,
+      color: TEAM_COLORS[index % TEAM_COLORS.length]!,
+      points: this.tl.outcomeSeries(card.world, this.chartMetric),
+    }));
+    const allValues = series.flatMap((item) => item.points.map((point) => point.value));
+    if (!allValues.length) {
+      ctx.fillStyle = "#9097b1";
+      ctx.font = "13px system-ui";
+      ctx.fillText("Select at least one communication style.", 18, 30);
+      this.chartValues.replaceChildren();
+      return;
+    }
+
+    const margin = { left: 52, right: 18, top: 16, bottom: 30 };
+    const plotWidth = Math.max(1, width - margin.left - margin.right);
+    const plotHeight = Math.max(1, height - margin.top - margin.bottom);
+    const maxTick = Math.max(
+      this.tl.header.ticks,
+      ...series.flatMap((item) => item.points.map((p) => p.tick)),
+    );
+    let minValue = Math.min(0, ...allValues);
+    let maxValue = Math.max(0, ...allValues);
+    if (minValue === maxValue) maxValue = minValue + 1;
+    const padding = Math.max(1, (maxValue - minValue) * 0.06);
+    if (minValue < 0) minValue -= padding;
+    maxValue += padding;
+    const x = (tick: number) => margin.left + (tick / Math.max(1, maxTick)) * plotWidth;
+    const y = (value: number) => margin.top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
+
+    ctx.font = "11px system-ui";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i <= 4; i++) {
+      const value = minValue + ((maxValue - minValue) * i) / 4;
+      const py = y(value);
+      ctx.strokeStyle = value === 0 ? "#596078" : "#2e3348";
+      ctx.lineWidth = value === 0 ? 1.4 : 1;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, py);
+      ctx.lineTo(width - margin.right, py);
+      ctx.stroke();
+      ctx.fillStyle = "#9097b1";
+      const label = Math.abs(maxValue - minValue) < 8 ? Number(value.toFixed(1)) : Math.round(value);
+      ctx.fillText(String(label), margin.left - 8, py);
+    }
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let i = 0; i <= 4; i++) {
+      const tick = Math.round((maxTick * i) / 4);
+      ctx.fillStyle = "#9097b1";
+      ctx.fillText(String(tick), x(tick), height - margin.bottom + 8);
+    }
+    ctx.textAlign = "right";
+    ctx.fillText("tick", width - margin.right, height - 13);
+
+    for (const item of series) {
+      if (!item.points.length) continue;
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      item.points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(x(point.tick), y(point.value));
+        else ctx.lineTo(x(point.tick), y(point.value));
+      });
+      ctx.stroke();
+    }
+
+    const playheadX = x(currentTick);
+    ctx.strokeStyle = "rgba(232, 233, 240, 0.72)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(playheadX, margin.top);
+    ctx.lineTo(playheadX, height - margin.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const metric = CHART_METRICS[this.chartMetric];
+    this.chartValues.replaceChildren();
+    this.chartValues.append(
+      el(
+        "span",
+        `chart-direction ${metric.better}`,
+        metric.better === "high" ? "Higher is better" : "Lower is better",
+      ),
+    );
+    for (const item of series) {
+      const snapshot = this.tl.outcomesAt(item.card.world, this.t);
+      if (!snapshot) continue;
+      const chip = el("span", "chart-value");
+      const swatch = el("i");
+      swatch.style.background = item.color;
+      const value = snapshot[this.chartMetric];
+      chip.append(swatch, document.createTextNode(`${item.card.world.label}: ${value}`));
+      this.chartValues.append(chip);
+      ctx.fillStyle = item.color;
+      ctx.beginPath();
+      ctx.arc(playheadX, y(value), 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#11131c";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
 
   private drawMarks() {

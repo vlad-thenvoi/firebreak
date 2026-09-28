@@ -28,6 +28,21 @@ export interface WorldTimeline {
   commentary: CommentaryFrame[];
 }
 
+export type OutcomeMetric =
+  "score" | "extinguished" | "active_fires" | "evacuated" | "lost" | "houses_standing" | "houses_destroyed";
+
+export interface OutcomeSnapshot {
+  tick: number;
+  t_ms: number;
+  score: number;
+  extinguished: number;
+  active_fires: number;
+  evacuated: number;
+  lost: number;
+  houses_standing: number;
+  houses_destroyed: number;
+}
+
 const STALE_REASONS = new Set([
   "no_fire_at_target",
   "civilian_gone",
@@ -160,6 +175,44 @@ export class Timeline {
       for (const a of w.ticks[i]!.state.agents) if (a.order_status !== "active") idle++;
     }
     return { cost, calls, stale, joint, messages, idle };
+  }
+
+  /** Mission outcomes at a replay position. These come from recorded world state, not inferred events. */
+  outcomesAt(w: WorldTimeline, t: number): OutcomeSnapshot | null {
+    const frame = this.frameAt(w, t);
+    if (!frame) return null;
+    const { score, fires } = frame.cur;
+    return {
+      tick: frame.tick,
+      t_ms: this.tickTime(w, frame.tick),
+      score: score.total,
+      extinguished: score.extinguished,
+      active_fires: fires.length,
+      evacuated: score.evacuated,
+      lost: score.lost,
+      houses_standing: score.houses_standing,
+      houses_destroyed: score.houses_destroyed,
+    };
+  }
+
+  /** One point per recorded tick for the comparison chart. */
+  outcomeSeries(w: WorldTimeline, metric: OutcomeMetric): { tick: number; t_ms: number; value: number }[] {
+    return w.ticks.flatMap((frame) =>
+      frame
+        ? [
+            {
+              tick: frame.tick,
+              t_ms: frame.t_ms,
+              value:
+                metric === "active_fires"
+                  ? frame.state.fires.length
+                  : metric === "score"
+                    ? frame.state.score.total
+                    : frame.state.score[metric],
+            },
+          ]
+        : [],
+    );
   }
 
   /** Messages to draw at time t: sent within the window, not older than `holdMs` after delivery. */

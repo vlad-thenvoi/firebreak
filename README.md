@@ -23,7 +23,7 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 - **Fair subscription execution:** Claude and Codex strip API-key variables. Codex reuses one process for efficiency but creates a fresh ephemeral thread for every decision, loads no user configuration, and disables Codex's own shell, apps, plugins, web search, and subagents.
 - **Comparable worlds:** every communication condition in a match uses the same scenario seed, scheduled events, and tile/tick random rolls. Only communication differs between teams.
 - **Replay broadcasts:** an omniscient post-match commentator explains the fire, rescue effort, and teamwork in plain language. Commentary is generated after gameplay, saved as a sidecar, and reused on future replay loads.
-- **Viewer explanations:** the replay includes a legend, rules reference, event markers, and a full-screen broadcast transcript reader.
+- **Viewer explanations:** the replay includes a legend, rules reference, event markers, per-team positive/negative outcome counters, an outcome-over-time comparison chart, and a full-screen broadcast transcript reader.
 
 See [CHANGELOG.md](CHANGELOG.md) for the detailed history.
 
@@ -69,7 +69,9 @@ pnpm firebreak commentate 20260927-184427-s13-mmr7.sqlite # generate/save broadc
 pnpm firebreak run --config-from 20260927-184427-s13-mmr7.sqlite --seed 14   # same setup, new seed
 ```
 
-Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team. Every board also has an **AI Broadcast** section that explains the fire situation, communication, teamwork, and decision quality in plain language.
+Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team. Each board separates mission outcomes (rescues, losses, fires, and houses) from operational diagnostics (cost, calls, messages, stale actions, idle agent-ticks, and missed joint attempts). At the bottom, **Outcome over time** plots any outcome by tick and lets you toggle communication styles independently. Every board also has an **AI Broadcast** section that explains the fire situation, communication, teamwork, and decision quality in plain language.
+
+“Missed joint” counts ticks where only one firefighter attempted an intensity-3 fire. Those fires require both firefighters to extinguish the same target in the same tick, so repeated solo attempts are counted repeatedly rather than once per distinct fire.
 
 The commentator is an omniscient observer, not a sixth player. It sees the full current map and every message the team sent, even when that team's transport did not deliver the message. To protect experimental fairness, it runs only after the outcome is fixed and its tokens/cost never enter team metrics. `--commentary` generates it eagerly; opening or exporting any historical replay without commentary generates it automatically. By default the commentator uses the local Claude subscription with Haiku, independently of the gameplay provider/model, so OpenAI recordings do not require an OpenAI key merely to narrate them. Override `commentator.backend` and `commentator.model` when desired; set both to `same` to reuse the gameplay model.
 

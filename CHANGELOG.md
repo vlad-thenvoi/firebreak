@@ -14,6 +14,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Added saved, versioned commentary sidecars under `runs/commentary/` so historical broadcasts are generated once and reused.
 - Added automatic commentary generation for historical replays that do not already have saved commentary.
 - Added a full broadcast transcript reader, viewer legend, rules reference, and labelled timeline markers.
+- Added per-team mission-outcome counters and an outcome-over-time replay chart with metric and communication-style toggles.
 - Added paired advanced-model comparison notes and reports for Claude and OpenAI runs.
 
 ### Changed
@@ -23,6 +24,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Made local Claude/Haiku the default replay commentator, independently of the gameplay model.
 - Documented that displayed subscription dollar figures are API-equivalent estimates rather than billed charges.
 - Documented the scoring information agents receive and the requirements for a valid cross-run comparison.
+- Clarified “missed joint” as a per-tick failed solo attempt against an intensity-3 fire.
 
 ### Fairness and security
 
