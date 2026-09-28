@@ -199,7 +199,7 @@ Everything an agent does goes through tool calls. There is no free-text parsing.
 - **An order tool returns right away**, without waiting for the order to finish. It returns either `accepted, takes effect on tick N`, or a validation error (e.g. "not adjacent", "no water", "unknown civilian"). Completion and blocking arrive later as wake triggers (§6.2).
 - **At most one order per decision.** The last valid one wins.
 - **Communication tools** come from the team's transport (§7). The reference teams have none.
-- **Sub-agent team:** sub-agents get their role's order tools plus `finish(outcome, report)`. The orchestrator gets only `spawn(body, brief)` and `wait()`.
+- **Sub-agent team:** sub-agents get their role's order tools plus `finish(outcome, report)`. The orchestrator gets only `spawn(body, brief, done_when)` and `wait()`.
 - **Turn limit:** one decision allows up to 3 model turns, so the model can correct itself after a validation error. After that the decision ends.
 - Tool definitions are versioned and recorded with each match (§8.2).
 
@@ -252,7 +252,7 @@ Follows the real sub-agent pattern (Claude Agent SDK / Task tool, LangGraph supe
 - **Tools:** `spawn(body, brief, done_when)` starts a sub-agent that controls one body (at most one live sub-agent per body). `done_when` is a concrete, observable acceptance contract. Explicitly open-ended assignments such as watching or patrolling until the match ends are rejected. The orchestrator is woken whenever a report arrives and handles reports one at a time as they come in. It never waits for all of them.
 - **Sub-agent:** runs the same agent loop and gets **only its brief** (no memory of earlier spawns), its own current observations, accumulated sightings from this assignment, and its recent order outcomes. Tools: its role's order tools and `finish(outcome, report)` (§6.4).
 - **Lifetime:** a sub-agent owns the assignment until it reports verified completion or an unrecoverable blockage. It re-checks `done_when` after every observation or order result and must finish immediately once all criteria are satisfied. There is no fixed lifetime by default. `subagents.max_lifetime_ticks` may opt a run into a hard safety cutoff; `0` disables it.
-- **Report:** the sub-agent's text **plus an automatic structured list of everything it saw** (generous on purpose).
+- **Report:** the sub-agent's text **plus an automatic structured list of everything it saw** (generous on purpose). The report event also records its outcome, spawn tick, assignment age, and whether its age crossed the diagnostic long-running threshold (one quarter of match length, minimum eight ticks). That flag never interrupts or terminates work.
 - **Faithful limits:** no incoming channel while running, no talking between peers, no interrupting.
 - Bodies with no live sub-agent keep their last order, then wait.
 - The orchestrator is also woken by a heartbeat every 3 ticks while any body has no sub-agent, and its prompt tells it to keep every body busy (generous on purpose).
@@ -324,7 +324,7 @@ The viewer only ever consumes an **event stream**. Live mode is a websocket that
 
 - **Layout:** a responsive grid of boards, one per team, each labelled with team name and live score. Column count follows available width rather than a fixed team count. Visible cards use the same square-map and panel heights so each mission-stat and operational-stat row stays horizontally aligned; the comparison chart is a separate block below the grid.
 - **Board:** the tile map, fire intensity, agents as role icons, civilians with countdown rings, and fog of war shaded by the team's combined vision.
-- **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms).
+- **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms). Every card also provides a full, untruncated message transcript through its **Read full** control.
 - **Counters** under each board: score, $ spent, messages, stale actions, idle ticks, uncovered intensity-3 fire-ticks.
 - **Inspector:** click an agent to see its latest observation, its prompt's message window, and its last LLM response.
 - **Controls:** play/pause, speed (0.5–10×), timeline scrubber with event markers, step ±1 tick, choose which teams are shown, and persistent visibility switches for mission stats, operational stats, messages, AI commentary, and the comparison chart.
@@ -372,7 +372,7 @@ llm:
 budget: { usd: 5.00, tokens: 10000000 }
 map: { size: 20, houses: [8, 12], civilians: [4, 6], wind_shifts: [2, 3] }
 fire: { base_spread: 0.05, growth_every: 5, burnout_ticks: 10, house_destroy_ticks: 3 }
-rules: { civilian_deadline: 15, forecast_lead: 6, water_capacity: 3, clear_debris_ticks: 2 }
+rules: { civilian_deadline: 17, forecast_lead: 6, water_capacity: 3, clear_debris_ticks: 2 }
 band: { agents_file: band_agents.yaml, rest_url: https://app.band.ai, ws_url: wss://app.band.ai/api/v1/socket/websocket }
 record: { dir: runs, prompts: true }
 agent: { message_window: 30, heartbeat_ticks: 3, order_log: 5, max_decisions_per_tick: 3 }

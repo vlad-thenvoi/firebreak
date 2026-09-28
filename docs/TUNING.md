@@ -12,7 +12,7 @@ Measurements behind the defaults in `packages/engine/src/config.ts` and `package
 | 0.05 | 6 | 16 | −3 | +36 |
 | 0.035 | 6 | 16 | −3 | +38 |
 
-Chosen: `base_spread 0.05`, `growth_every 5`, `civilian_deadline 15`, and the rescuer drives at 2 tiles/tick (at 1 tile/tick almost every civilian was lost even with perfect information). Fires still escalate if ignored, and information clearly matters.
+The original tuning selected `base_spread 0.05`, `growth_every 5`, `civilian_deadline 15`, and a rescuer speed of 2 tiles/tick (at 1 tile/tick almost every civilian was lost even with perfect information). After the longer 120-tick agent runs exposed how little response time remained after another agent discovered and communicated a civilian, engine v0.3 raises the default deadline by two ticks to 17. The deadline remains configurable; this is an engine-rule change, so recordings from the two defaults are not outcome-comparable.
 
 ## 2. LLM latency on the `claude-code` backend
 

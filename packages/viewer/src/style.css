@@ -293,15 +293,39 @@ a {
   overflow-wrap: anywhere;
 }
 .ticker {
-  height: 56px;
-  flex: 0 0 56px;
+  height: 78px;
+  flex: 0 0 78px;
   overflow: hidden;
   padding: 4px 10px 8px;
   font-size: 12px;
   color: var(--muted);
   border-top: 1px solid var(--line);
 }
-.ticker div {
+.ticker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  color: var(--accent-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.ticker-read {
+  border: 1px solid #71518b;
+  border-radius: 999px;
+  background: rgba(199, 146, 234, 0.12);
+  color: #d6a7f3;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0;
+  padding: 2px 8px;
+}
+.ticker-read:hover {
+  border-color: var(--accent-2);
+}
+.ticker-body > div {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -554,6 +578,28 @@ a {
 }
 .broadcast-transcript p {
   margin: 0 0 13px;
+}
+.message-transcript article {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.message-transcript article:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.message-transcript h3 {
+  margin: 0 0 8px;
+  color: var(--accent-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.message-transcript p {
+  margin: 0;
+  color: #d9ddeb;
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .controls {

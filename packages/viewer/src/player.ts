@@ -33,6 +33,7 @@ interface Card {
   outcomes: HTMLElement;
   counters: HTMLElement;
   ticker: HTMLElement;
+  messageBody: HTMLElement;
   commentary: HTMLElement;
   results: HTMLElement;
   hits: HitTarget[];
@@ -83,6 +84,7 @@ export class Player {
   private badge!: HTMLElement;
   private legend!: HTMLDialogElement;
   private broadcastDialog!: HTMLDialogElement;
+  private messageDialog!: HTMLDialogElement;
   private subagentDialog!: HTMLDialogElement;
   private viewDialog!: HTMLDialogElement;
   private viewPreferences: ViewPreferences = loadViewPreferences();
@@ -166,7 +168,14 @@ export class Player {
       wrap.append(canvas, results);
       const counters = el("div", "counters");
       const outcomes = el("div", "outcomes");
-      const ticker = el("div", "ticker");
+      const ticker = el("section", "ticker");
+      const tickerHead = el("div", "ticker-head");
+      tickerHead.append(el("span", "", "TEAM MESSAGES"));
+      const readMessages = el("button", "ticker-read", "Read full");
+      readMessages.type = "button";
+      tickerHead.append(readMessages);
+      const messageBody = el("div", "ticker-body");
+      ticker.append(tickerHead, messageBody);
       const commentary = el("section", "commentary");
       const commentaryHead = el("div", "commentary-head");
       commentaryHead.append(el("span", "", "AI BROADCAST"));
@@ -188,11 +197,13 @@ export class Player {
         outcomes,
         counters,
         ticker,
+        messageBody,
         commentary,
         results,
         hits: [],
         visible: true,
       };
+      readMessages.addEventListener("click", () => this.openMessages(c));
       canvas.addEventListener("click", (e) => this.onClick(c, e));
       head.title = "Click to focus on this team (click again for all)";
       head.style.cursor = "pointer";
@@ -267,6 +278,10 @@ export class Player {
     this.broadcastDialog.addEventListener("click", (event) => {
       if (event.target === this.broadcastDialog) this.broadcastDialog.close();
     });
+    this.messageDialog = el("dialog", "broadcast-dialog message-dialog") as HTMLDialogElement;
+    this.messageDialog.addEventListener("click", (event) => {
+      if (event.target === this.messageDialog) this.messageDialog.close();
+    });
     shell.append(
       top,
       main,
@@ -275,6 +290,7 @@ export class Player {
       this.legend,
       this.subagentDialog,
       this.broadcastDialog,
+      this.messageDialog,
     );
     this.root.replaceChildren(shell);
     this.applyViewPreferences(false);
@@ -722,7 +738,7 @@ export class Player {
           "Intensity-3 fire-ticks without both firefighters assigned to that same target. Lower is better.",
         );
       const recent = this.tl.recentMessages(c.world, t, 3);
-      c.ticker.innerHTML = recent.length
+      c.messageBody.innerHTML = recent.length
         ? recent
             .map(
               (m) =>
@@ -1016,6 +1032,34 @@ export class Player {
           article.append(el("p", "", paragraph.trim()));
         transcript.append(article);
       });
+      dialog.append(transcript);
+    }
+    dialog.showModal();
+  }
+
+  private openMessages(c: Card) {
+    const messages = c.world.messages.filter((message) => message.t_ms <= this.t);
+    const dialog = this.messageDialog;
+    dialog.replaceChildren();
+    const close = el("button", "dialog-close", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close team transcript");
+    close.addEventListener("click", () => dialog.close());
+    dialog.append(close, el("div", "eyebrow", "Team messages"), el("h2", "", c.world.label));
+    if (!messages.length) {
+      dialog.append(el("p", "meta", "No messages have been sent by this team at the current replay time."));
+    } else {
+      const transcript = el("div", "message-transcript");
+      for (const message of messages) {
+        const tick = this.tl.frameAt(c.world, message.t_ms)?.tick ?? 0;
+        const recipient = message.to.join(", ") || message.channel;
+        const article = el("article");
+        article.append(
+          el("h3", "", `Tick ${tick} · ${message.from} → ${recipient}`),
+          el("p", "", message.text),
+        );
+        transcript.append(article);
+      }
       dialog.append(transcript);
     }
     dialog.showModal();

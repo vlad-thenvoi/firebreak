@@ -18,6 +18,8 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Added paired advanced-model comparison notes and reports for Claude and OpenAI runs.
 - Added a replay-visible sub-agent lifecycle configurator that produces the exact next-run override.
 - Added persistent View controls for mission stats, operational stats, team messages, AI commentary, and the comparison chart.
+- Added a full, untruncated team-message transcript for every replay card.
+- Added recorded sub-agent assignment ages and a diagnostic long-running flag that never kills or interrupts the worker.
 
 ### Changed
 
@@ -33,6 +35,8 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Separated the comparison chart from the board grid and fixed every card section to shared responsive heights, preventing stale canvas dimensions from stretching one card or misaligning statistics across teams.
 - Grouped mission outcomes into vertical civilian, fire, and house pairs, and exposed the saved commentator backend/model directly in each broadcast panel.
 - Tightened task-lived sub-agents in prompt v6: every spawn now requires observable `done_when` criteria, workers must report immediately when those criteria are met, and explicitly open-ended watch/patrol assignments are rejected without imposing a timer.
+- Increased the configurable default civilian survival window from 15 to 17 ticks and bumped the engine version to 0.3.0.
+- Documented the distinction between oracle-style perfect information, local room broadcast, and mention-delivered real Band rooms.
 
 ### Fairness and security
 

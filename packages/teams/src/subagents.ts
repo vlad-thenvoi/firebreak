@@ -24,6 +24,9 @@ import { z } from "zod";
 
 export const ORCHESTRATOR = "orchestrator";
 
+/** Diagnostic only: crossing this age never terminates or interrupts an assignment. */
+const longAssignmentThreshold = (ticks: number) => Math.max(8, Math.ceil(ticks / 4));
+
 const SUBAGENT_COMMS = (
   lifetime: number,
 ) => `You are a SUB-AGENT spawned by your team's orchestrator (the commander) to control this body for one task.
@@ -202,7 +205,10 @@ export class SubagentTeam implements TeamController {
     l.finished = true;
     l.agent.stop();
     this.live.delete(l.body);
-    const full = `${outcome.toUpperCase()}: ${text.trim()} | SEEN: ${this.sightingsText(l.seen)}`;
+    const ageTicks = Math.max(0, this.state.tick - l.spawned);
+    const longThreshold = longAssignmentThreshold(this.world.config.ticks);
+    const longRunning = ageTicks >= longThreshold;
+    const full = `${outcome.toUpperCase()}: ${text.trim()} | ASSIGNMENT AGE: ${ageTicks} ticks${longRunning ? " (LONG-RUNNING)" : ""} | SEEN: ${this.sightingsText(l.seen)}`;
     const { id, t_ms } = this.log.sent(l.body, { to: [ORCHESTRATOR], channel: "report", text: full });
     this.log.delivered(id, ORCHESTRATOR);
     this.reports.push({ id, from: l.body, tick: this.state.tick, text: full, sent_ms: t_ms });
@@ -213,7 +219,14 @@ export class SubagentTeam implements TeamController {
       t_ms,
       type: "report",
       agent_id: l.body,
-      payload: { text: full },
+      payload: {
+        text: full,
+        outcome,
+        spawned_tick: l.spawned,
+        age_ticks: ageTicks,
+        long_threshold_ticks: longThreshold,
+        long_running: longRunning,
+      },
     });
     this.reasons.add(`report from ${l.body}`);
     this.pump();
@@ -324,8 +337,10 @@ export class SubagentTeam implements TeamController {
     this.unread = 0;
     const bodies = s.agents.map((a) => {
       const l = this.live.get(a.id);
+      const age = l ? s.tick - l.spawned : 0;
+      const longThreshold = longAssignmentThreshold(w.config.ticks);
       return l
-        ? `- ${a.id} (${a.role}): sub-agent running since t${l.spawned}, brief: "${l.brief}", done when: "${l.doneWhen}"`
+        ? `- ${a.id} (${a.role}): sub-agent running since t${l.spawned} (${age} ticks old${age >= longThreshold ? "; LONG-RUNNING diagnostic—do not interrupt it" : ""}), brief: "${l.brief}", done when: "${l.doneWhen}"`
         : `- ${a.id} (${a.role}): NO sub-agent (idle or finishing its last order)`;
     });
     const user = [

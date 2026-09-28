@@ -322,10 +322,17 @@ describe("LLM teams (fake model)", () => {
     const frames = loadBundle(file).frames;
     const spawns = frames.filter((f) => f.kind === "event" && f.type === "spawn");
     const reports = frames.filter((f) => f.kind === "message" && f.channel === "report");
+    const reportEvents = frames.filter((f) => f.kind === "event" && f.type === "report");
     expect(spawns.length).toBeGreaterThanOrEqual(2);
     expect(spawns.every((f) => f.kind === "event" && typeof f.payload.done_when === "string")).toBe(true);
     expect(reports.length).toBeGreaterThanOrEqual(1);
     expect(reports[0]!.kind === "message" && reports[0]!.text).toMatch(/SEEN:/);
+    expect(reportEvents[0]!.kind === "event" && reportEvents[0]!.payload).toMatchObject({
+      outcome: "completed",
+      age_ticks: expect.any(Number),
+      long_threshold_ticks: 8,
+      long_running: false,
+    });
     const m = computeMetrics(file);
     expect(m.worlds[0]!.orchestrator_queue_median_ms).not.toBeNull();
     expect(
