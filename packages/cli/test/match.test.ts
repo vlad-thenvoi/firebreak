@@ -18,7 +18,15 @@ import {
   type Transport,
   type WorldHandle,
 } from "@firebreak/runtime";
-import { PeerTeam, SubagentTeam, botsNone, botsPerfect, chatBroadcast, chatMentions } from "@firebreak/teams";
+import {
+  PeerTeam,
+  SubagentTeam,
+  botsNone,
+  botsPerfect,
+  chatBroadcast,
+  chatMentions,
+  validateSubagentAssignment,
+} from "@firebreak/teams";
 import { z } from "zod";
 import { verifyRecording } from "../src/verify";
 import { commentaryPath, ensureCommentary, loadReplayBundle, loadSavedCommentary } from "../src/commentary";
@@ -60,7 +68,11 @@ class FakeLlm implements LlmClient {
           !req.user.includes(`${body} (`) ||
           req.user.includes(`${body} (${body === "scout" ? "scout" : "firefighter"}): NO`)
         )
-          await call("spawn", { body, brief: `explore from tick ${tick}` });
+          await call("spawn", {
+            body,
+            brief: `explore the northern route from tick ${tick}`,
+            done_when: "the northern route has been inspected once and all sightings are recorded",
+          });
     } else if (names.has("finish") && tick >= 2 && this.finishSubagents) {
       await call("finish", { outcome: "completed", report: "done exploring" });
     } else {
@@ -202,7 +214,7 @@ describe("recording and replay", () => {
     expect(new Set(initialHashes)).toEqual(new Set([initialHashes[0]]));
     expect(b.frames.filter((f) => f.kind === "tick")).toHaveLength(62);
     expect(b.frames.at(-1)?.kind).toBe("end");
-    expect(b.header.config.prompt_version).toBe("5");
+    expect(b.header.config.prompt_version).toBe("6");
     const db = openRecording(file);
     const cfg = readConfig(db);
     db.close();
@@ -215,6 +227,22 @@ describe("recording and replay", () => {
 });
 
 describe("LLM teams (fake model)", () => {
+  it("requires bounded sub-agent assignments with observable completion criteria", () => {
+    expect(
+      validateSubagentAssignment(
+        "inspect the east road from the bridge to the final house",
+        "the route has been inspected once and all sightings are recorded",
+      ),
+    ).toBeNull();
+    expect(
+      validateSubagentAssignment(
+        "stay on watch near the east road until the match ends",
+        "keep reporting anything that appears",
+      ),
+    ).toMatch(/open-ended/);
+    expect(validateSubagentAssignment("inspect", "done")).toMatch(/brief/);
+  });
+
   it("peer agents give orders and their messages are delivered and consumed", async () => {
     const llm = new FakeLlm();
     const fake: TeamFactory = {
@@ -295,10 +323,17 @@ describe("LLM teams (fake model)", () => {
     const spawns = frames.filter((f) => f.kind === "event" && f.type === "spawn");
     const reports = frames.filter((f) => f.kind === "message" && f.channel === "report");
     expect(spawns.length).toBeGreaterThanOrEqual(2);
+    expect(spawns.every((f) => f.kind === "event" && typeof f.payload.done_when === "string")).toBe(true);
     expect(reports.length).toBeGreaterThanOrEqual(1);
     expect(reports[0]!.kind === "message" && reports[0]!.text).toMatch(/SEEN:/);
     const m = computeMetrics(file);
     expect(m.worlds[0]!.orchestrator_queue_median_ms).not.toBeNull();
+    expect(
+      llm.systems.some((system) => system.includes("Every assignment must be bounded and finishable")),
+    ).toBe(true);
+    expect(llm.systems.some((system) => system.includes("The moment every criterion is verified"))).toBe(
+      true,
+    );
   });
 
   it("keeps sub-agents alive until they report unless a hard lifetime is explicitly enabled", async () => {

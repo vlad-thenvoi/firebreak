@@ -249,9 +249,9 @@ Both deterministic local-chat teams expose the same `send_message(text, mentions
 Follows the real sub-agent pattern (Claude Agent SDK / Task tool, LangGraph supervisor, agents-as-tools).
 
 - **Orchestrator:** a 6th LLM with no body. It sees only what sub-agents report. Its tokens are included in the team's cost.
-- **Tools:** `spawn(body, brief)` starts a sub-agent that controls one body (at most one live sub-agent per body). The orchestrator is woken whenever a report arrives and handles reports one at a time as they come in. It never waits for all of them.
+- **Tools:** `spawn(body, brief, done_when)` starts a sub-agent that controls one body (at most one live sub-agent per body). `done_when` is a concrete, observable acceptance contract. Explicitly open-ended assignments such as watching or patrolling until the match ends are rejected. The orchestrator is woken whenever a report arrives and handles reports one at a time as they come in. It never waits for all of them.
 - **Sub-agent:** runs the same agent loop and gets **only its brief** (no memory of earlier spawns), its own current observations, accumulated sightings from this assignment, and its recent order outcomes. Tools: its role's order tools and `finish(outcome, report)` (§6.4).
-- **Lifetime:** a sub-agent owns the assignment until it reports verified completion or an unrecoverable blockage. There is no fixed lifetime by default. `subagents.max_lifetime_ticks` may opt a run into a hard safety cutoff; `0` disables it.
+- **Lifetime:** a sub-agent owns the assignment until it reports verified completion or an unrecoverable blockage. It re-checks `done_when` after every observation or order result and must finish immediately once all criteria are satisfied. There is no fixed lifetime by default. `subagents.max_lifetime_ticks` may opt a run into a hard safety cutoff; `0` disables it.
 - **Report:** the sub-agent's text **plus an automatic structured list of everything it saw** (generous on purpose).
 - **Faithful limits:** no incoming channel while running, no talking between peers, no interrupting.
 - Bodies with no live sub-agent keep their last order, then wait.

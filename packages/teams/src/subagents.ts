@@ -29,7 +29,8 @@ const SUBAGENT_COMMS = (
 ) => `You are a SUB-AGENT spawned by your team's orchestrator (the commander) to control this body for one task.
 - You cannot talk to anyone. You cannot receive messages. Nobody can interrupt you.
 - Own the assignment across as many decisions and ticks as it needs. Observe progress, adapt after completed or blocked orders, and keep working independently.
-- Do NOT finish merely because you issued an order or reached an arbitrary number of ticks. Call finish(outcome, report) only after you verify the assignment is complete, or after you determine it is blocked/impossible and cannot recover with your role.
+- Your assignment includes explicit DONE WHEN criteria. Re-check them after every observation and order result. The moment every criterion is verified, call finish(completed, report) immediately; do not add extra patrols, monitoring or improvements.
+- Do NOT finish merely because you issued an order or reached an arbitrary number of ticks. Call finish(blocked, report) only after you determine that the criteria are impossible and you cannot recover with your role. Explain the concrete blocker.
 - Everything you saw is attached to your report automatically. Only that final report wakes the orchestrator; after you end, it may spawn a fresh sub-agent with a new brief.${
   lifetime > 0
     ? `\n- This run opted into a hard safety limit of ${lifetime} ticks. Finish and report before then when possible.`
@@ -48,15 +49,29 @@ You only know what your sub-agents report back.
 YOUR TEAM (bodies): scout (moves 2/tick, sees 5 tiles, gets the wind forecast), ff1 and ff2 (firefighters: 3 water, refill at water; intensity-3 fires need BOTH in the same tick), engineer (clears debris, builds firebreaks), rescuer (roads only, 2/tick, evacuates civilians).
 
 HOW YOU CONTROL THE TEAM
-- spawn(body, brief) starts a sub-agent that controls that body with your brief (e.g. "go to (8,16) and put out the fire there; ff2 is coming too").
+- spawn(body, brief, done_when) starts a sub-agent that controls that body. The brief says what to do; done_when gives concrete, observable acceptance criteria (e.g. brief "go to (8,16) and put out the fire; ff2 is coming too", done_when "the fire at (8,16) is visibly gone, or the route is proven unreachable").
 - A sub-agent works on its own, cannot receive messages and cannot talk to other sub-agents. It owns the assignment until it reports verified completion or an unrecoverable blockage.${
   lifetime > 0
     ? ` This run opts into a hard ${lifetime}-tick safety limit.`
     : " There is no fixed tick limit."
 }
 - At most one sub-agent per body at a time. A body without a sub-agent keeps doing its last order and then waits.
-- You are woken when reports arrive, and every few ticks. Idle bodies waste time: keep every body busy (e.g. send firefighters toward likely fire areas while the scout explores). Give precise briefs with coordinates.
+- Every assignment must be bounded and finishable. Never assign "stay on watch", "patrol indefinitely", "keep fighting whatever appears", or work "until the match ends". Turn coverage into one finite sweep or checklist; after its report, spawn another task if more work remains.
+- Use task deadlines only when the objective itself is time-sensitive. A deadline is an acceptance criterion, not an automatic worker lifetime cap.
+- You are woken when reports arrive, and every few ticks. Idle bodies waste time: keep every body on useful finite work (e.g. send firefighters to one known cluster while the scout completes one named route). Give precise briefs with coordinates and observable done_when criteria.
 - Act immediately: call your tools first. Write at most one short sentence, or nothing.`;
+
+const OPEN_ENDED_ASSIGNMENT =
+  /\b(until (?:the )?match ends?|for (?:the )?rest of (?:the )?match|stay on watch|keep (?:watching|patrolling|fighting)|patrol indefinitely|ongoing patrol)\b/i;
+
+/** Guards the sub-agent topology against assignments that can never naturally report completion. */
+export function validateSubagentAssignment(brief: string, doneWhen: string): string | null {
+  if (brief.trim().length < 8) return "brief must state a concrete task";
+  if (doneWhen.trim().length < 12) return "done_when must state observable completion criteria";
+  if (OPEN_ENDED_ASSIGNMENT.test(`${brief} ${doneWhen}`))
+    return "assignment is open-ended; replace it with one finite route, target, or checklist and observable done_when criteria";
+  return null;
+}
 
 interface Sightings {
   fires: Map<string, { pos: [number, number]; intensity: number; tick: number }>;
@@ -72,6 +87,7 @@ interface Live {
   role: Role;
   agent: LlmAgent;
   brief: string;
+  doneWhen: string;
   spawned: number;
   seen: Sightings;
   finished: boolean;
@@ -119,10 +135,14 @@ export class SubagentTeam implements TeamController {
       {
         name: "spawn",
         description:
-          "Start a sub-agent controlling one body with a task brief. The body must not already have a live sub-agent.",
+          "Start a sub-agent on one bounded task. The body must be free; open-ended patrol/watch assignments are rejected.",
         schema: {
           body: z.enum(["scout", "ff1", "ff2", "engineer", "rescuer"]),
-          brief: z.string().describe("the task, with coordinates"),
+          brief: z.string().min(8).describe("one finite task, with coordinates or a bounded route/checklist"),
+          done_when: z
+            .string()
+            .min(12)
+            .describe("concrete observable criteria that prove the task completed or became impossible"),
         },
       },
       { name: "wait", description: "Do nothing until the next report.", schema: {} },
@@ -199,7 +219,7 @@ export class SubagentTeam implements TeamController {
     this.pump();
   }
 
-  private spawn(body: string, brief: string): ToolResult {
+  private spawn(body: string, brief: string, doneWhen: string): ToolResult {
     const a = this.state.agents.find((x) => x.id === body);
     if (!a) return { text: `unknown body ${body}`, isError: true };
     if (this.live.has(body))
@@ -207,7 +227,10 @@ export class SubagentTeam implements TeamController {
         text: `${body} already has a live sub-agent (spawned t${this.live.get(body)!.spawned})`,
         isError: true,
       };
-    const { id } = this.log.sent(ORCHESTRATOR, { to: [body], channel: "spawn", text: brief });
+    const invalid = validateSubagentAssignment(brief, doneWhen);
+    if (invalid) return { text: invalid, isError: true };
+    const assignment = `TASK: ${brief}\nDONE WHEN: ${doneWhen}`;
+    const { id } = this.log.sent(ORCHESTRATOR, { to: [body], channel: "spawn", text: assignment });
     this.log.delivered(id, body);
     const seen: Sightings = {
       fires: new Map(),
@@ -221,6 +244,7 @@ export class SubagentTeam implements TeamController {
       body,
       role: a.role,
       brief,
+      doneWhen,
       spawned: this.state.tick,
       seen,
       finished: false,
@@ -235,7 +259,7 @@ export class SubagentTeam implements TeamController {
           {
             name: "finish",
             description:
-              "End this sub-agent and send its only report. Use completed only after verifying the assigned objective is done; use blocked only after recovery is impossible.",
+              "End this sub-agent and send its only report. Call completed immediately when DONE WHEN is verified; call blocked only when a concrete obstacle makes it impossible.",
             schema: {
               outcome: z.enum(["completed", "blocked"]),
               report: z.string().describe("what was achieved or why it is impossible, plus useful findings"),
@@ -250,8 +274,9 @@ export class SubagentTeam implements TeamController {
           }
           return [
             `YOUR ASSIGNMENT from the orchestrator (spawned at tick ${live.spawned}): ${brief}`,
+            `DONE WHEN (verify these acceptance criteria): ${live.doneWhen}`,
             `ACCUMULATED SIGHTINGS during this assignment: ${this.sightingsText(live.seen)}`,
-            "Keep ownership of this assignment. Report only after verified completion or unrecoverable blockage.",
+            "Re-check DONE WHEN now. If it is satisfied, call finish(completed, report) immediately. Otherwise keep ownership and make the next action that directly advances it. Call finish(blocked, report) only for a concrete unrecoverable obstacle.",
           ].join("\n");
         },
         executeOther: async (name, input) => {
@@ -269,7 +294,7 @@ export class SubagentTeam implements TeamController {
       t_ms: this.world.now(),
       type: "spawn",
       agent_id: body,
-      payload: { brief },
+      payload: { brief, done_when: doneWhen },
     });
     this.recordSightings(live, observe(world.scenario, this.state, body));
     live.agent.onTick(this.state, []);
@@ -300,7 +325,7 @@ export class SubagentTeam implements TeamController {
     const bodies = s.agents.map((a) => {
       const l = this.live.get(a.id);
       return l
-        ? `- ${a.id} (${a.role}): sub-agent running since t${l.spawned}, brief: "${l.brief}"`
+        ? `- ${a.id} (${a.role}): sub-agent running since t${l.spawned}, brief: "${l.brief}", done when: "${l.doneWhen}"`
         : `- ${a.id} (${a.role}): NO sub-agent (idle or finishing its last order)`;
     });
     const user = [
@@ -333,7 +358,7 @@ export class SubagentTeam implements TeamController {
       signal: w.signal,
       execute: async (name, input) =>
         name === "spawn"
-          ? this.spawn(String(input.body), String(input.brief ?? ""))
+          ? this.spawn(String(input.body), String(input.brief ?? ""), String(input.done_when ?? ""))
           : name === "wait"
             ? { text: "ok", isError: false }
             : { text: `unknown tool ${name}`, isError: true },

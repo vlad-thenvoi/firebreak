@@ -395,7 +395,7 @@ export class Player {
     const description = el(
       "p",
       "meta",
-      "A worker normally owns one assignment until it reports verified completion or an unrecoverable blockage. Enable a hard limit only as an experimental safety cutoff.",
+      "A worker owns one bounded assignment with explicit done-when criteria until it reports verified completion or an unrecoverable blockage. Enable a hard limit only as an experimental safety cutoff.",
     );
 
     const controls = el("div", "subagent-settings");

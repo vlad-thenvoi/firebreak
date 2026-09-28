@@ -32,6 +32,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Reworked the replay grid to size boards from available width instead of fixed panel-height estimates, and made statistic labels wrap into responsive three- or six-column layouts.
 - Separated the comparison chart from the board grid and fixed every card section to shared responsive heights, preventing stale canvas dimensions from stretching one card or misaligning statistics across teams.
 - Grouped mission outcomes into vertical civilian, fire, and house pairs, and exposed the saved commentator backend/model directly in each broadcast panel.
+- Tightened task-lived sub-agents in prompt v6: every spawn now requires observable `done_when` criteria, workers must report immediately when those criteria are met, and explicitly open-ended watch/patrol assignments are rejected without imposing a timer.
 
 ### Fairness and security
 

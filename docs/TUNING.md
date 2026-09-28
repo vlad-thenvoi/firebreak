@@ -141,3 +141,31 @@ The original sub-agent condition forcibly ended every worker after 8 ticks. That
 The old “missed joint” metric only counted a firefighter already adjacent to an intensity-3 fire and spraying alone. On `20260928-065207-s42-err3.sqlite` it reported `0` for all five teams, although every team experienced 20 intensity-3 fire-ticks and none ever assigned both firefighters to the same intensity-3 target (perfect assigned one firefighter for 1 tick; the other conditions assigned none). The replacement metric counts intensity-3 fire-ticks with fewer than two assigned firefighters, producing `20` rather than the misleading `0` for each condition in that recording.
 
 Prompt v5 also makes the clock and fire severity explicit. Every agent receives total ticks, current tick, and ticks remaining in the system layer. Observations already expose exact numeric intensity; the shared prompt now states that higher intensity raises spread probability, intensity 3 is maximum severity, and threatening intensity-3 fires require an immediate paired assignment.
+
+## 9. 120-tick subscription runs and bounded assignments (prompts v5–v6)
+
+Four prompt-v5 repetitions per model used seed 42, 120 ticks, low reasoning effort, a 1,024-token output cap, and `subagents.max_lifetime_ticks: 0`. Every match contained `none`, `perfect`, `subagents`, `chat-mentions`, and `chat-broadcast`. Gameplay used the local Claude and Codex subscription backends; the dollar figures in the reports are API-equivalent estimates, not bills. All eight matches completed, saved five Haiku subscription commentary broadcasts, and replay-verified exactly.
+
+| Model | Repetition | None | Perfect | Sub-agents | Mentions | Broadcast | Winner |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Claude Opus 5.5 | 1 | 12 | 74 | 23 | 51 | 72 | Perfect |
+| Claude Opus 5.5 | 2 | 13 | -15 | -39 | 76 | 50 | Mentions |
+| Claude Opus 5.5 | 3 | 13 | 73 | -16 | 81 | 56 | Mentions |
+| Claude Opus 5.5 | 4 | 14 | 44 | -36 | 83 | 48 | Mentions |
+| GPT-5.6 Sol | 1 | -31 | 39 | -52 | 27 | 3 | Perfect |
+| GPT-5.6 Sol | 2 | -30 | 16 | -1 | 24 | 28 | Broadcast |
+| GPT-5.6 Sol | 3 | -19 | 8 | -31 | -5 | -16 | Perfect |
+| GPT-5.6 Sol | 4 | -27 | 60 | -65 | 7 | -4 | Perfect |
+
+Model-specific score summaries (mean ± sample standard deviation):
+
+| Model | None | Perfect | Sub-agents | Mentions | Broadcast |
+|---|---:|---:|---:|---:|---:|
+| Claude Opus 5.5 | 13.0 ± 0.8 | 44.0 ± 41.7 | -17.0 ± 28.6 | **72.8 ± 14.8** | 56.5 ± 10.9 |
+| GPT-5.6 Sol | -26.8 ± 5.4 | **30.8 ± 23.5** | -37.3 ± 27.9 | 13.3 ± 15.0 | 2.8 ± 18.6 |
+
+Across the eight recordings, perfect won four, mentions three, broadcast one, and neither sub-agents nor no-communication won. Perfect's 6-tick forecast lead in every repetition confirms that its failures were not missing-information failures. It is an information ceiling, not a centralized-planning or play-quality ceiling: five independent agents can still herd, duplicate work, or prioritize badly.
+
+The task-lived lifecycle exposed a model-dependent failure. Opus created 124 assignments and received 116 reports (103 completed, 13 blocked), with a report-weighted mean duration of about 16 ticks. Sol created only 46 assignments and received 43 reports (29 completed, 14 blocked), with a mean duration of about 46 ticks; individual assignments lasted as long as 118 ticks. Sol's orchestrator therefore received far fewer opportunities to reconsider work, and its sub-agent condition averaged below no communication.
+
+Prompt v6 responds without restoring an arbitrary lifetime. `spawn` now requires separate `brief` and `done_when` fields; `done_when` must give observable acceptance criteria. The orchestrator is forbidden from assigning indefinite watch/patrol work, and the runtime rejects explicit “until the match ends” variants. Workers re-check the criteria after every observation and order result, call `finish(completed, report)` immediately when satisfied, and use `blocked` only for a concrete unrecoverable obstacle. This preserves the real sub-agent lifecycle—task, work, completion report—while preventing an inherently endless task from occupying a body for the whole match. Prompt-v5 results above must not be compared directly with future prompt-v6 runs.

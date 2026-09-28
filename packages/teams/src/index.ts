@@ -7,7 +7,7 @@ import { botsNone, botsPerfect } from "./scripted";
 
 export { PeerTeam } from "./peer";
 export { BandTransport, band } from "./band";
-export { SubagentTeam, subagents, ORCHESTRATOR } from "./subagents";
+export { SubagentTeam, subagents, ORCHESTRATOR, validateSubagentAssignment } from "./subagents";
 export { LocalChatTransport, chatBroadcast, chatMentions } from "./local-chat";
 export { botsNone, botsPerfect } from "./scripted";
 

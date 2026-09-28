@@ -9,9 +9,9 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 | `chat-mentions`             | Local shared room; only explicitly mentioned teammates receive each message                        |
 | `chat-broadcast`            | Local shared room; every teammate receives every message, while mentions mark the intended readers |
 | `none`                      | No communication (lower bound)                                                                     |
-| `perfect`                   | Everyone sees everything any teammate sees, instantly (upper bound)                                |
+| `perfect`                   | Everyone sees every teammate's observations instantly (information ceiling, not a planner)         |
 | `band`                      | Optional real Band rooms through `@band-ai/sdk`                                                    |
-| `subagents`                 | Orchestrator that delegates complete tasks to isolated, task-lived workers                         |
+| `subagents`                 | Orchestrator delegates bounded tasks with explicit completion criteria to isolated workers         |
 | `bots-none`, `bots-perfect` | Scripted bots, no LLM (for development and tuning)                                                 |
 
 - [Specification](docs/SPEC.md) · [Implementation plan](docs/PLAN.md) · [Tuning notes](docs/TUNING.md) · [Changelog](CHANGELOG.md) · [Guide for coding agents](AGENTS.md)
@@ -21,7 +21,7 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 - **Two local chat experiments:** `chat-mentions` delivers a message only to named agents; `chat-broadcast` delivers every room message to everyone. They use the same agents, model, prompts, world seed, and engine rules.
 - **OpenAI support:** `openai` uses the billed Responses API, while `codex` uses the local ChatGPT/Codex subscription through a headless App Server. Claude continues to use the local subscription by default through `claude-code`.
 - **Fair subscription execution:** Claude and Codex strip API-key variables. Codex reuses one process for efficiency but creates a fresh ephemeral thread for every decision, loads no user configuration, and disables Codex's own shell, apps, plugins, web search, and subagents.
-- **Comparable worlds:** every communication condition in a match uses the same scenario seed, scheduled events, and tile/tick random rolls. Only communication differs between teams.
+- **Comparable worlds:** every communication condition in a match uses the same scenario seed, scheduled events, and tile/tick random rolls. Only communication differs between teams. Perfect communication is a shared-information ceiling, not centralized planning, so independent agents may still duplicate work or make poor choices.
 - **Replay broadcasts:** an omniscient post-match commentator explains the fire, rescue effort, and teamwork in plain language. Commentary is generated after gameplay, saved as a sidecar, and reused on future replay loads.
 - **Viewer explanations:** the replay includes a legend, rules reference, event markers, per-team positive/negative outcome counters, an outcome-over-time comparison chart, and a full-screen broadcast transcript reader.
 
@@ -47,7 +47,7 @@ pnpm firebreak run --live
 pnpm firebreak run --teams chat-mentions,chat-broadcast --seed 7 --set ticks=30
 pnpm firebreak run --set llm.backend=codex --set llm.model=gpt-5.6-luna
 
-# Sub-agents normally live until their task is complete; opt into the old hard cutoff if desired
+# Sub-agents receive a finite task plus explicit `done_when` criteria and live until they satisfy or are blocked on it; opt into the old hard cutoff if desired
 pnpm firebreak run --teams none,perfect,subagents --set subagents.max_lifetime_ticks=8
 
 # Generate an omniscient, human-friendly broadcast after play (one model call per team)
