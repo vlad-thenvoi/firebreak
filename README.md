@@ -14,7 +14,18 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 | `subagents`                 | Optional orchestrator that spawns ephemeral workers                                                |
 | `bots-none`, `bots-perfect` | Scripted bots, no LLM (for development and tuning)                                                 |
 
-- [Specification](docs/SPEC.md) · [Implementation plan](docs/PLAN.md) · [Tuning notes](docs/TUNING.md) · [Guide for coding agents](AGENTS.md)
+- [Specification](docs/SPEC.md) · [Implementation plan](docs/PLAN.md) · [Tuning notes](docs/TUNING.md) · [Changelog](CHANGELOG.md) · [Guide for coding agents](AGENTS.md)
+
+## Recent additions
+
+- **Two local chat experiments:** `chat-mentions` delivers a message only to named agents; `chat-broadcast` delivers every room message to everyone. They use the same agents, model, prompts, world seed, and engine rules.
+- **OpenAI support:** `openai` uses the billed Responses API, while `codex` uses the local ChatGPT/Codex subscription through a headless App Server. Claude continues to use the local subscription by default through `claude-code`.
+- **Fair subscription execution:** Claude and Codex strip API-key variables. Codex reuses one process for efficiency but creates a fresh ephemeral thread for every decision, loads no user configuration, and disables Codex's own shell, apps, plugins, web search, and subagents.
+- **Comparable worlds:** every communication condition in a match uses the same scenario seed, scheduled events, and tile/tick random rolls. Only communication differs between teams.
+- **Replay broadcasts:** an omniscient post-match commentator explains the fire, rescue effort, and teamwork in plain language. Commentary is generated after gameplay, saved as a sidecar, and reused on future replay loads.
+- **Viewer explanations:** the replay includes a legend, rules reference, event markers, and a full-screen broadcast transcript reader.
+
+See [CHANGELOG.md](CHANGELOG.md) for the detailed history.
 
 ## Setup
 
@@ -88,6 +99,23 @@ sqlite3 $R "SELECT json_extract(value_json, '$.model') FROM match_config WHERE s
 ```
 
 World ids are `w<N>-<team>` (e.g. `w3-band`); agent ids are `scout`, `ff1`, `ff2`, `engineer`, `rescuer` (plus `orchestrator` on the sub-agent team). The full schema is in `packages/recorder/src/schema.ts`.
+
+### Scoring and comparing runs
+
+Every LLM agent—including the sub-agent orchestrator and each spawned worker—receives the exact team scoring weights in its system prompt:
+
+| Outcome                         | Score |
+| ------------------------------- | ----: |
+| Civilian evacuated              |   +10 |
+| Civilian lost                   |   −20 |
+| House still standing at the end |    +5 |
+| Fire tile extinguished          |    +1 |
+
+Agents can therefore prioritize actions to maximize the team score. They do **not** receive an omniscient live score or hidden world state: ordinary agents see only their local observations and delivered messages, the perfect-information condition sees the team's combined observations, and the sub-agent orchestrator sees worker reports.
+
+The house term gives each world a positive starting score. For example, seed 42 has 11 houses, so a one-tick smoke test normally finishes at `11 × 5 = 55` before civilians can expire or houses can burn down. An aborted match may also show this initial snapshot. That does not make it comparable to a complete 60-tick match, where civilian losses can quickly make the total negative.
+
+Only compare recordings with the same seed, tick count and duration, engine version, prompt version, backend/model, and status. In particular, exclude aborted runs and do not compare one-tick backend smoke tests with full matches. Use `firebreak metrics` and the recorded `match_config` when in doubt.
 
 ## Many seeds
 
