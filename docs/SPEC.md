@@ -160,12 +160,13 @@ At most 3 decisions per agent per tick. At real model latency (~4 s per decision
 
 ### 6.3 LLM backends
 
-The runtime calls models through one interface, `LlmClient.decide(prompt, tools) → { toolCalls, usage, latency }`. It has three backends:
+The runtime calls models through one interface, `LlmClient.decide(prompt, tools) → { toolCalls, usage, latency }`. It has four backends:
 
 | Backend | Auth | Implementation | Notes |
 |---|---|---|---|
 | `api` | `ANTHROPIC_API_KEY` | `@anthropic-ai/sdk` Messages API with tool use | Lowest latency, billed per token |
 | `claude-code` (default) | Claude subscription: the local `claude` login, or `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | `@anthropic-ai/claude-agent-sdk` `query()`, with a custom `systemPrompt`, built-in tools disabled, and game tools served through `createSdkMcpServer` | Not billed per token. Subject to the subscription's usage limits. ~4 s per decision |
+| `codex` | ChatGPT subscription: the local `codex` login | One long-lived `codex app-server` process; one fresh ephemeral thread per decision; game actions are client-executed dynamic tools | Not billed as API usage. Subject to the ChatGPT/Codex plan's usage limits |
 | `openai` | `OPENAI_API_KEY` | OpenAI Responses API with function tools | Stateless (`store: false`), billed per token |
 
 Settings the `claude-code` backend needs to behave like the `api` backend (measured, see docs/TUNING.md):
@@ -174,13 +175,20 @@ Settings the `claude-code` backend needs to behave like the `api` backend (measu
 - `ANTHROPIC_API_KEY` and parent `CLAUDE_CODE_*` variables are removed from the subprocess environment, so a subscription run can never bill an API key.
 - The decision returns as soon as the tool results come back without an error (like the `api` backend); the subprocess is shut down in the background.
 
+The `codex` backend applies the same fairness boundary:
+- `OPENAI_API_KEY`, `CODEX_API_KEY`, and `CODEX_ACCESS_TOKEN` are removed from the subprocess environment. Startup also verifies that App Server reports `account.type = chatgpt`, so it cannot silently use API billing.
+- A private temporary `CODEX_HOME` contains only a protected copy of the saved ChatGPT login. User config, stored sessions, AGENTS files, plugins, apps, skills, hooks, and MCP servers are not inherited.
+- Shell, web search, apps, plugins, and Codex multi-agent tools are disabled. The thread is read-only and sees only the Firebreak dynamic tools supplied for that role.
+- The App Server process is reused, but every `decide()` call starts a fresh ephemeral thread and rejects any loaded instruction source. No agent history crosses decisions.
+- Firebreak's `subagents` condition is unchanged: only its recorded orchestrator can spawn the simulator's ephemeral worker bodies. Codex cannot spawn its own hidden subagents.
+
 - **One backend per match.** All teams in a match use the same backend, so the comparison stays fair. The backend is recorded with the match (§8.2).
 - **Compare within a backend.** Latency differs between backends, so reports compare matches from the same backend only (and the same `tick_ms`).
 - **Stateless calls in every backend.** Every decision is a fresh call with a freshly built prompt (§6.1). No backend-side session memory, so every backend sees exactly the recorded input.
-- **Cost:** `api` and `openai` calculate cost from token usage and the recorded model price. `claude-code` records tokens plus the SDK's `total_cost_usd` as an *estimated* cost.
-- **Usage limits:** a match is about 1,200 model calls. Before a `claude-code` match or batch starts, the runner warns that it may hit the subscription's usage limits. If a limit is hit, the match is aborted and marked `aborted: usage_limit`, not scored.
+- **Cost:** `api` and `openai` calculate billed cost from token usage and the recorded model price. `claude-code` and `codex` record an *estimated API-equivalent cost* for comparison; subscription runs are not API-billed.
+- **Usage limits:** a match is about 1,200 model calls. Before a subscription match or batch starts, the runner warns that it may hit the plan's usage limits. If a limit is hit, the match is aborted and marked `aborted: usage_limit`, not scored.
 - Default model: `claude-haiku-4-5-20251001` (fast and cheap, which keeps ticks short). Configurable per match.
-- **Per-match budget cap** (tokens, and $ for billed API backends). The match aborts cleanly if it's exceeded.
+- **Per-match budget cap** (tokens, and API-equivalent $). The match aborts cleanly if it's exceeded.
 
 ### 6.4 Tools
 
@@ -284,7 +292,7 @@ Each match is stored in one SQLite file: `runs/<match-id>.sqlite`.
 **The configuration is always stored with the recording**, so every match documents exactly how it was produced:
 
 - **Resolved config:** the final values after defaults, the config file, and CLI overrides were merged, plus the original config file text and the CLI arguments.
-- **LLM:** backend (`api` / `claude-code` / `openai`), model id, temperature, reasoning effort, max tokens, turn limit.
+- **LLM:** backend (`api` / `claude-code` / `codex` / `openai`), model id, temperature, reasoning effort, max tokens, turn limit.
 - **Prompts and tools:** the full text of every role prompt and transport tools section, and every tool definition, each with a content hash.
 - **Code:** engine version, git commit, a dirty-tree flag, and package versions (e.g. `@band-ai/sdk`, the Agent SDK).
 - **Environment:** OS, Node version, and the Band / Slack / Linear environment URLs.
@@ -356,7 +364,7 @@ ticks: 60
 tick_ms: 5000
 teams: [none, perfect, chat-mentions, chat-broadcast]
 llm:
-  backend: claude-code          # claude-code | api (Anthropic) | openai (Responses)
+  backend: claude-code          # subscription: claude-code | codex; billed API: api | openai
   model: claude-haiku-4-5-20251001
   temperature: 0.2
   reasoning_effort: low

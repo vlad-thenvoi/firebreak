@@ -32,6 +32,17 @@ export async function runBatch(
       (commentaryCalls && (c.commentator.backend === "same" || c.commentator.backend === "claude-code"))
     )
       console.log("backend claude-code: this counts against your Claude subscription's usage limits.");
+    if (
+      c.llm.backend === "codex" ||
+      (commentaryCalls && (c.commentator.backend === "same" || c.commentator.backend === "codex"))
+    )
+      console.log("backend codex: this counts against your ChatGPT/Codex subscription's usage limits.");
+    if (
+      c.llm.backend === "claude-code" ||
+      c.llm.backend === "codex" ||
+      (commentaryCalls && ["same", "claude-code", "codex"].includes(c.commentator.backend))
+    )
+      console.log("subscription backend: displayed $ figures are API-equivalent estimates, not charges.");
     if (!a.yes) {
       const rl = createInterface({ input: process.stdin, output: process.stdout });
       const ans = (await rl.question("continue? [y/N] ")).trim().toLowerCase();

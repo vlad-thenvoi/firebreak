@@ -37,7 +37,8 @@ export interface DecideResult {
 
 /** One model interface shared by every backend (SPEC §6.3). */
 export interface LlmClient {
-  readonly backend: "api" | "claude-code" | "openai";
+  readonly backend: "api" | "claude-code" | "openai" | "codex";
   readonly model: string;
   decide(req: DecideRequest): Promise<DecideResult>;
+  close?(): Promise<void>;
 }

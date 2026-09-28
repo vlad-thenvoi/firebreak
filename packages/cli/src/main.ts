@@ -88,9 +88,10 @@ async function main(argv: string[]): Promise<number> {
         log,
       });
       console.log(`\n${result.status}${result.reason ? ` (${result.reason})` : ""}`);
+      const subscription = c.llm.backend === "claude-code" || c.llm.backend === "codex";
       for (const r of result.results)
         console.log(
-          `  ${r.team.padEnd(14)} score ${String(r.score).padStart(4)}   $${r.cost_usd.toFixed(3)}`,
+          `  ${r.team.padEnd(14)} score ${String(r.score).padStart(4)}   ${subscription ? "~" : ""}$${r.cost_usd.toFixed(3)}${subscription ? " API-equivalent (subscription)" : ""}`,
         );
       console.log(`recording: ${relRuns(file)}`);
       if (live) {

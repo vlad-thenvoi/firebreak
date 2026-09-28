@@ -24,7 +24,7 @@ cp .env.example .env                 # API credentials, if using a billed backen
 cp band_agents.yaml.example band_agents.yaml   # only needed for the band team
 ```
 
-Requires Node 22.13+ and pnpm. LLM teams run on your Claude subscription by default (`llm.backend: claude-code`, using the local `claude` login). Use `llm.backend=api` with `ANTHROPIC_API_KEY` for the Claude API, or `llm.backend=openai` with `OPENAI_API_KEY` for the OpenAI Responses API. The CLI reads credentials from the process environment; it does not load `.env` itself.
+Requires Node 22.13+ and pnpm. Subscription backends are the default path: `llm.backend=claude-code` (the overall default) uses the local `claude` login, while `llm.backend=codex` uses the local ChatGPT-authenticated `codex` login. Run `claude` or `codex login` once before using them. These consume plan usage rather than billing API tokens. The explicitly billed alternatives are `llm.backend=api` with `ANTHROPIC_API_KEY` and `llm.backend=openai` with `OPENAI_API_KEY`. The CLI reads credentials from the process environment; it does not load `.env` itself.
 
 ## Run a match
 
@@ -34,7 +34,7 @@ pnpm firebreak run --live
 
 # Pick teams, seed, provider and any config value
 pnpm firebreak run --teams chat-mentions,chat-broadcast --seed 7 --set ticks=30
-pnpm firebreak run --set llm.backend=openai --set llm.model=gpt-5.6-luna
+pnpm firebreak run --set llm.backend=codex --set llm.model=gpt-5.6-luna
 
 # Generate an omniscient, human-friendly broadcast after play (one model call per team)
 pnpm firebreak run --commentary

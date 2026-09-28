@@ -101,6 +101,11 @@ export async function runMatch(
     result = await runner.run();
   } finally {
     process.off("SIGINT", onSig);
+    try {
+      await llm?.close?.();
+    } catch (e) {
+      opts.log?.(`LLM shutdown failed: ${e instanceof Error ? e.message : e}`);
+    }
     writer.close();
   }
   if (config.commentator.enabled) {

@@ -106,10 +106,15 @@ export async function ensureCommentary(
   const task = (async () => {
     const config = options.config ?? recordedConfig(recording);
     const llm = options.llm ?? createLlmClient(commentatorMatchConfig(config));
-    const frames = await generateCommentary(bundle, llm, {
-      intervalTicks: config.commentator.interval_ticks,
-      includePrompts: config.record.prompts,
-    });
+    let frames: CommentaryFrame[];
+    try {
+      frames = await generateCommentary(bundle, llm, {
+        intervalTicks: config.commentator.interval_ticks,
+        includePrompts: config.record.prompts,
+      });
+    } finally {
+      if (!options.llm) await llm.close?.();
+    }
     const sidecar: CommentarySidecar = {
       schema_version: 1,
       match_id: bundle.header.match_id,

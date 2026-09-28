@@ -1,7 +1,7 @@
 import { DEFAULT_GAME_CONFIG, type GameConfig } from "@firebreak/engine";
 import { parse } from "yaml";
 
-export type LlmBackend = "api" | "claude-code" | "openai";
+export type LlmBackend = "api" | "claude-code" | "openai" | "codex";
 
 /** The full, resolved configuration of a match (SPEC §11). */
 export interface MatchConfig {
@@ -170,13 +170,16 @@ export function validateConfig(c: MatchConfig): void {
   if (!Number.isInteger(c.seed)) throw new Error("seed must be an integer");
   if (c.ticks < 1) throw new Error("ticks must be >= 1");
   if (c.tick_ms < 0) throw new Error("tick_ms must be >= 0");
-  if (!["api", "claude-code", "openai"].includes(c.llm.backend))
+  if (!["api", "claude-code", "openai", "codex"].includes(c.llm.backend))
     throw new Error(`unknown llm.backend ${c.llm.backend}`);
   if (c.teams.length === 0) throw new Error("teams must not be empty");
   if (!Number.isInteger(c.commentator.interval_ticks) || c.commentator.interval_ticks < 1)
     throw new Error("commentator.interval_ticks must be an integer >= 1");
   if (c.commentator.max_tokens < 1) throw new Error("commentator.max_tokens must be >= 1");
-  if (c.commentator.backend !== "same" && !["api", "claude-code", "openai"].includes(c.commentator.backend))
+  if (
+    c.commentator.backend !== "same" &&
+    !["api", "claude-code", "openai", "codex"].includes(c.commentator.backend)
+  )
     throw new Error(`unknown commentator.backend ${c.commentator.backend}`);
 }
 

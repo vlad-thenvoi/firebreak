@@ -14,7 +14,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 | M1 Engine | done | deterministic, shared per-tile randomness, scripted bots |
 | M2 Recorder and replay core | done | one SQLite file per match (`node:sqlite`), config stored with it, `verify` |
 | M3 Viewer | done | Canvas 2D instead of PixiJS; single-file build |
-| M4 LLM runtime and reference teams | done | both backends; `claude-code` tuned to ~4 s/decision |
+| M4 LLM runtime and reference teams | done | Claude/OpenAI API plus subscription backends; `claude-code` tuned to ~4 s/decision |
 | M5 Tune the game | first pass, needs more seeds | batch 1: perfect beat none 3/3; batch 2 (prompt v3): band best (+26 mean) but perfect ≈ none. Needs 10–20 seeds (docs/TUNING.md §6) |
 | M6 Band team | done | real Band rooms; delivery semantics measured |
 | M7 Sub-agent team | done | orchestrator + spawn/report, hub-and-spoke in the viewer |
@@ -30,7 +30,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 - pnpm workspace with the `packages/*` from §12, TypeScript strict, Vitest, ESLint/Prettier.
 - `cli` package with an empty `firebreak` command.
 - GitHub Actions: lint, typecheck, test.
-- `.env.example` (ANTHROPIC_API_KEY, BAND_* per agent), `runs/` git-ignored.
+- `.env.example` (optional billed API keys, BAND_* per agent), `runs/` git-ignored.
 
 **Done when:** `pnpm i && pnpm test` passes on a clean clone, and CI is green.
 
@@ -69,7 +69,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 **Done when:** a recorded scripted match replays smoothly at 10×, and seeking to any tick is instant.
 
 ### M4: LLM agent runtime and reference teams (L)
-- `LlmClient` interface with two backends: `api` (Anthropic SDK, API key) and `claude-code` (Claude Agent SDK, subscription login). Token/cost/latency accounting, per-match budget cap, usage-limit abort (§6.3).
+- `LlmClient` interface with API and subscription backends for Anthropic and OpenAI. Token/cost/latency accounting, per-match budget cap, usage-limit abort (§6.3).
 - Order tools per role, validation errors as tool results, turn limit per decision (§6.4).
 - Measure per-call latency on both backends; record the numbers in `docs/TUNING.md`.
 - Agent loop, wake triggers, and trigger merging (§6.1–6.2).
