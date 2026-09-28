@@ -199,7 +199,7 @@ Everything an agent does goes through tool calls. There is no free-text parsing.
 - **An order tool returns right away**, without waiting for the order to finish. It returns either `accepted, takes effect on tick N`, or a validation error (e.g. "not adjacent", "no water", "unknown civilian"). Completion and blocking arrive later as wake triggers (§6.2).
 - **At most one order per decision.** The last valid one wins.
 - **Communication tools** come from the team's transport (§7). The reference teams have none.
-- **Sub-agent team:** sub-agents get their role's order tools plus `finish(report)`. The orchestrator gets only `spawn(body, brief)` and `wait()`.
+- **Sub-agent team:** sub-agents get their role's order tools plus `finish(outcome, report)`. The orchestrator gets only `spawn(body, brief)` and `wait()`.
 - **Turn limit:** one decision allows up to 3 model turns, so the model can correct itself after a validation error. After that the decision ends.
 - Tool definitions are versioned and recorded with each match (§8.2).
 
@@ -250,8 +250,8 @@ Follows the real sub-agent pattern (Claude Agent SDK / Task tool, LangGraph supe
 
 - **Orchestrator:** a 6th LLM with no body. It sees only what sub-agents report. Its tokens are included in the team's cost.
 - **Tools:** `spawn(body, brief)` starts a sub-agent that controls one body (at most one live sub-agent per body). The orchestrator is woken whenever a report arrives and handles reports one at a time as they come in. It never waits for all of them.
-- **Sub-agent:** runs the same agent loop and gets **only its brief** (no memory of earlier spawns) plus its own observations. Tools: its role's order tools and `finish(report)` (§6.4).
-- **Lifetime:** a sub-agent ends when it calls `finish`, when its order is blocked and it can't recover, or after 8 ticks (then an automatic report is produced).
+- **Sub-agent:** runs the same agent loop and gets **only its brief** (no memory of earlier spawns), its own current observations, accumulated sightings from this assignment, and its recent order outcomes. Tools: its role's order tools and `finish(outcome, report)` (§6.4).
+- **Lifetime:** a sub-agent owns the assignment until it reports verified completion or an unrecoverable blockage. There is no fixed lifetime by default. `subagents.max_lifetime_ticks` may opt a run into a hard safety cutoff; `0` disables it.
 - **Report:** the sub-agent's text **plus an automatic structured list of everything it saw** (generous on purpose).
 - **Faithful limits:** no incoming channel while running, no talking between peers, no interrupting.
 - Bodies with no live sub-agent keep their last order, then wait.
@@ -325,7 +325,7 @@ The viewer only ever consumes an **event stream**. Live mode is a websocket that
 - **Layout:** a grid of boards, one per team (2×2 for four teams, 3×2 with the reference teams), each labelled with team name and live score.
 - **Board:** the tile map, fire intensity, agents as role icons, civilians with countdown rings, and fog of war shaded by the team's combined vision.
 - **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms).
-- **Counters** under each board: score, $ spent, messages, stale actions, idle ticks, missed joint tasks.
+- **Counters** under each board: score, $ spent, messages, stale actions, idle ticks, uncovered intensity-3 fire-ticks.
 - **Inspector:** click an agent to see its latest observation, its prompt's message window, and its last LLM response.
 - **Controls:** play/pause, speed (0.5–10×), timeline scrubber with event markers, step ±1 tick, choose which teams are shown.
 - Stack: Vite + TypeScript + Canvas 2D (six 20×20 boards are far below what needs WebGL). The build is one self-contained `index.html`, which the server serves and `export` embeds a recording into.
@@ -345,7 +345,7 @@ Every metric is a SQL query over the recording.
 - **Message latency:** `consumed_at − sent_at`, median and p90.
 - **Idle ticks:** ticks where an agent had no active order.
 - **Stale actions:** orders that targeted something already changed when issued (e.g. a fire already out, a civilian already evacuated or lost, a path through the collapsed bridge).
-- **Missed joint tasks:** ticks where an intensity-3 fire had exactly one firefighter extinguishing it.
+- **Uncovered intensity-3 fire-ticks** (stored under the legacy `missed_joint` metric key): one count for every intensity-3 fire on every tick where fewer than two firefighters have active extinguish orders for that exact target. Assignment counts while firefighters travel; lower is better.
 - **Duplicate work:** two agents with orders on the same target at the same time.
 - **Noise ratio:** share of the messages in an agent's prompt that weren't addressed to it and didn't affect its next order (a heuristic: not mentioned and no referenced entity in its vision).
 - **Context size:** prompt tokens per agent over time.
@@ -376,7 +376,7 @@ rules: { civilian_deadline: 15, forecast_lead: 6, water_capacity: 3, clear_debri
 band: { agents_file: band_agents.yaml, rest_url: https://app.band.ai, ws_url: wss://app.band.ai/api/v1/socket/websocket }
 record: { dir: runs, prompts: true }
 agent: { message_window: 30, heartbeat_ticks: 3, order_log: 5, max_decisions_per_tick: 3 }
-subagents: { max_lifetime_ticks: 8 }
+subagents: { max_lifetime_ticks: 0 } # 0 = task-driven; set 8 to opt into the former hard cutoff
 commentator: { enabled: false, interval_ticks: 10, backend: claude-code, model: claude-haiku-4-5-20251001, max_tokens: 2400, reasoning_effort: low }
 ```
 

@@ -202,8 +202,9 @@ export class LlmAgent {
     });
     const started = w.now();
     const id = `${w.worldId}-${this.id}-c${++callSeq}`;
+    const decisionSystem = `${this.o.system}\n\nCURRENT MATCH TIME: tick ${obs.tick} of ${this.o.world.config.ticks}; ${obs.ticks_left} ticks remain. Plan only work that can matter within that time.`;
     const res = await this.o.llm.decide({
-      system: this.o.system,
+      system: decisionSystem,
       user,
       tools: this.o.tools,
       maxTurns: w.config.llm.max_turns_per_decision,
@@ -223,7 +224,7 @@ export class LlmAgent {
       cache_read_tokens: res.cache_read_tokens,
       cost_usd: res.cost_usd,
       cost_estimated: res.cost_estimated,
-      ...(w.config.record.prompts ? { prompt: user } : {}),
+      ...(w.config.record.prompts ? { prompt: `SYSTEM\n${decisionSystem}\n\nUSER\n${user}` } : {}),
       response: res.response,
       tool_calls: res.tool_calls,
       ...(res.error ? { error: res.error } : {}),

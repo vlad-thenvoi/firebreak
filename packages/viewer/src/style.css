@@ -691,6 +691,68 @@ a {
 .legend-dialog h2 {
   margin: 0 0 18px;
 }
+.subagent-dialog {
+  width: min(650px, calc(100vw - 32px));
+}
+.subagent-dialog h2 {
+  margin-bottom: 10px;
+}
+.setting-current {
+  padding: 10px 12px;
+  border: 1px solid rgba(199, 146, 234, 0.45);
+  border-radius: 8px;
+  background: rgba(199, 146, 234, 0.09);
+}
+.subagent-settings {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin: 20px 0 12px;
+}
+.subagent-settings label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.subagent-settings label:last-child {
+  flex-direction: column;
+  align-items: flex-start;
+  color: var(--muted);
+  font-size: 11px;
+}
+.subagent-settings input[type="number"] {
+  width: 100px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.setting-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+.setting-command code {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--good);
+  white-space: nowrap;
+}
+@media (max-width: 620px) {
+  .subagent-settings {
+    grid-template-columns: 1fr;
+  }
+  .setting-command {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .dialog-close {
   float: right;
   border: 0;

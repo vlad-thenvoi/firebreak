@@ -52,7 +52,12 @@ const METRICS: {
   { key: "latency_p90_ms", label: "Message latency, p90 (ms)", fmt: (v) => v.toFixed(0), better: "low" },
   { key: "idle_agent_ticks", label: "Idle agent-ticks", fmt: (v) => v.toFixed(0), better: "low" },
   { key: "stale_actions", label: "Stale actions", fmt: (v) => v.toFixed(1), better: "low" },
-  { key: "missed_joint", label: "Missed joint tasks", fmt: (v) => v.toFixed(1), better: "low" },
+  {
+    key: "missed_joint",
+    label: "Uncovered intensity-3 fire-ticks",
+    fmt: (v) => v.toFixed(1),
+    better: "low",
+  },
   { key: "duplicate_work", label: "Duplicate work (agent-ticks)", fmt: (v) => v.toFixed(1), better: "low" },
   { key: "noise_ratio", label: "Noise ratio", fmt: (v) => `${(v * 100).toFixed(0)}%`, better: "low" },
   { key: "context_avg_tokens", label: "Prompt size, avg (tokens)", fmt: (v) => v.toFixed(0), better: "low" },

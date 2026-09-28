@@ -80,6 +80,7 @@ export class Player {
   private badge!: HTMLElement;
   private legend!: HTMLDialogElement;
   private broadcastDialog!: HTMLDialogElement;
+  private subagentDialog!: HTMLDialogElement;
   private chartCanvas!: HTMLCanvasElement;
   private chartValues!: HTMLElement;
   private chartMetric: OutcomeMetric = "score";
@@ -131,7 +132,10 @@ export class Player {
     legendButton.addEventListener("click", () => this.legend.showModal());
     const rules = el("a", "top-action", "Rules");
     rules.href = rulesHref();
-    help.append(legendButton, rules);
+    const subagentsButton = el("button", "top-action", "Sub-agents");
+    subagentsButton.title = "View this replay's sub-agent lifecycle and configure the next run";
+    subagentsButton.addEventListener("click", () => this.subagentDialog.showModal());
+    help.append(legendButton, rules, subagentsButton);
     top.append(brand, this.badge, meta, compactRoleLegend(), el("div", "spacer"), help, toggles);
 
     const main = el("div", "main");
@@ -246,14 +250,101 @@ export class Player {
     }
 
     this.legend = createLegendDialog();
+    this.subagentDialog = this.createSubagentDialog();
     this.broadcastDialog = el("dialog", "broadcast-dialog") as HTMLDialogElement;
     this.broadcastDialog.addEventListener("click", (event) => {
       if (event.target === this.broadcastDialog) this.broadcastDialog.close();
     });
-    shell.append(top, main, controls, this.legend, this.broadcastDialog);
+    shell.append(top, main, controls, this.legend, this.subagentDialog, this.broadcastDialog);
     this.root.replaceChildren(shell);
     this.setSpeed(1);
     requestAnimationFrame(() => this.layout());
+  }
+
+  private createSubagentDialog(): HTMLDialogElement {
+    const dialog = el("dialog", "legend-dialog subagent-dialog") as HTMLDialogElement;
+    const closeForm = el("form") as HTMLFormElement;
+    closeForm.method = "dialog";
+    const close = el("button", "dialog-close", "×");
+    close.setAttribute("aria-label", "Close sub-agent settings");
+    closeForm.append(close);
+
+    const resolved = this.tl.header.config.resolved as
+      { subagents?: { max_lifetime_ticks?: number } } | undefined;
+    const recordedLimit = Number(resolved?.subagents?.max_lifetime_ticks ?? 0);
+    const recorded = el(
+      "p",
+      "setting-current",
+      recordedLimit > 0
+        ? `This replay: hard ${recordedLimit}-tick limit enabled.`
+        : "This replay: task-driven lifecycle with no fixed tick limit.",
+    );
+    const description = el(
+      "p",
+      "meta",
+      "A worker normally owns one assignment until it reports verified completion or an unrecoverable blockage. Enable a hard limit only as an experimental safety cutoff.",
+    );
+
+    const controls = el("div", "subagent-settings");
+    const enabledLabel = el("label");
+    const enabled = el("input") as HTMLInputElement;
+    enabled.type = "checkbox";
+    enabled.checked = recordedLimit > 0;
+    enabledLabel.append(enabled, document.createTextNode("Enable hard lifetime limit"));
+    const ticksLabel = el("label");
+    ticksLabel.append(document.createTextNode("Maximum ticks"));
+    const ticks = el("input") as HTMLInputElement;
+    ticks.type = "number";
+    ticks.min = "1";
+    ticks.step = "1";
+    ticks.value = String(recordedLimit > 0 ? recordedLimit : 8);
+    ticksLabel.append(ticks);
+    controls.append(enabledLabel, ticksLabel);
+
+    const note = el(
+      "p",
+      "meta",
+      "Run settings are fixed when a match starts. This control produces the exact CLI override for the next recorded run; it cannot alter this replay.",
+    );
+    const commandRow = el("div", "setting-command");
+    const command = el("code");
+    const copy = el("button", "top-action", "Copy command");
+    copy.type = "button";
+    const teams = this.tl.header.teams.map((team) => team.team);
+    if (!teams.includes("subagents")) teams.push("subagents");
+    const update = () => {
+      ticks.disabled = !enabled.checked;
+      const limit = enabled.checked ? Math.max(1, Math.floor(Number(ticks.value) || 8)) : 0;
+      command.textContent = `pnpm firebreak run --live --teams ${teams.join(",")} --set subagents.max_lifetime_ticks=${limit}`;
+    };
+    enabled.addEventListener("change", update);
+    ticks.addEventListener("input", update);
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(command.textContent ?? "");
+        copy.textContent = "Copied";
+        setTimeout(() => (copy.textContent = "Copy command"), 1_200);
+      } catch {
+        window.getSelection()?.selectAllChildren(command);
+        copy.textContent = "Select and copy";
+      }
+    });
+    update();
+    commandRow.append(command, copy);
+    dialog.append(
+      closeForm,
+      el("div", "eyebrow", "Run configuration"),
+      el("h2", "", "Sub-agent lifecycle"),
+      recorded,
+      description,
+      controls,
+      note,
+      commandRow,
+    );
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    return dialog;
   }
 
   private buildOutcomeChart() {
@@ -513,8 +604,8 @@ export class Player {
         counter(k.idle, "idle agent-ticks") +
         counter(
           k.joint,
-          "missed joint",
-          "Ticks where only one firefighter tried an intensity-3 fire; two are required in the same tick.",
+          "uncovered I3",
+          "Intensity-3 fire-ticks without both firefighters assigned to that same target. Lower is better.",
         );
       const recent = this.tl.recentMessages(c.world, t, 3);
       c.ticker.innerHTML = recent.length

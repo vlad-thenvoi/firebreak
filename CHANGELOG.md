@@ -16,6 +16,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Added a full broadcast transcript reader, viewer legend, rules reference, and labelled timeline markers.
 - Added per-team mission-outcome counters and an outcome-over-time replay chart with metric and communication-style toggles.
 - Added paired advanced-model comparison notes and reports for Claude and OpenAI runs.
+- Added a replay-visible sub-agent lifecycle configurator that produces the exact next-run override.
 
 ### Changed
 
@@ -24,7 +25,9 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Made local Claude/Haiku the default replay commentator, independently of the gameplay model.
 - Documented that displayed subscription dollar figures are API-equivalent estimates rather than billed charges.
 - Documented the scoring information agents receive and the requirements for a valid cross-run comparison.
-- Clarified “missed joint” as a per-tick failed solo attempt against an intensity-3 fire.
+- Made sub-agents task-lived by default: they retain one assignment, accumulated sightings, and order history until they report completion or blockage. The former eight-tick cutoff remains an opt-in setting.
+- Added total/current/remaining tick information to every gameplay agent's system instructions and clarified the visibility, spread risk, and response priority of fire intensity.
+- Replaced the narrow “missed joint” counter with uncovered intensity-3 fire-ticks, which includes ignored and singly assigned joint fires.
 
 ### Fairness and security
 

@@ -11,7 +11,7 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 | `none`                      | No communication (lower bound)                                                                     |
 | `perfect`                   | Everyone sees everything any teammate sees, instantly (upper bound)                                |
 | `band`                      | Optional real Band rooms through `@band-ai/sdk`                                                    |
-| `subagents`                 | Optional orchestrator that spawns ephemeral workers                                                |
+| `subagents`                 | Orchestrator that delegates complete tasks to isolated, task-lived workers                         |
 | `bots-none`, `bots-perfect` | Scripted bots, no LLM (for development and tuning)                                                 |
 
 - [Specification](docs/SPEC.md) · [Implementation plan](docs/PLAN.md) · [Tuning notes](docs/TUNING.md) · [Changelog](CHANGELOG.md) · [Guide for coding agents](AGENTS.md)
@@ -47,6 +47,9 @@ pnpm firebreak run --live
 pnpm firebreak run --teams chat-mentions,chat-broadcast --seed 7 --set ticks=30
 pnpm firebreak run --set llm.backend=codex --set llm.model=gpt-5.6-luna
 
+# Sub-agents normally live until their task is complete; opt into the old hard cutoff if desired
+pnpm firebreak run --teams none,perfect,subagents --set subagents.max_lifetime_ticks=8
+
 # Generate an omniscient, human-friendly broadcast after play (one model call per team)
 pnpm firebreak run --commentary
 
@@ -69,9 +72,11 @@ pnpm firebreak commentate 20260927-184427-s13-mmr7.sqlite # generate/save broadc
 pnpm firebreak run --config-from 20260927-184427-s13-mmr7.sqlite --seed 14   # same setup, new seed
 ```
 
-Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team. Each board separates mission outcomes (rescues, losses, fires, and houses) from operational diagnostics (cost, calls, messages, stale actions, idle agent-ticks, and missed joint attempts). At the bottom, **Outcome over time** plots any outcome by tick and lets you toggle communication styles independently. Every board also has an **AI Broadcast** section that explains the fire situation, communication, teamwork, and decision quality in plain language.
+Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team. Each board separates mission outcomes (rescues, losses, fires, and houses) from operational diagnostics (cost, calls, messages, stale actions, idle agent-ticks, and uncovered intensity-3 fire-ticks). At the bottom, **Outcome over time** plots any outcome by tick and lets you toggle communication styles independently. Every board also has an **AI Broadcast** section that explains the fire situation, communication, teamwork, and decision quality in plain language.
 
-“Missed joint” counts ticks where only one firefighter attempted an intensity-3 fire. Those fires require both firefighters to extinguish the same target in the same tick, so repeated solo attempts are counted repeatedly rather than once per distinct fire.
+“Uncovered I3” counts every intensity-3 fire at every tick where fewer than two firefighters have active extinguish orders for that exact target. This measures whether the team has paired the required crew even while they are still travelling; lower is better. The **Sub-agents** button shows the lifecycle recorded for the replay and provides a UI control that generates the exact command for a task-driven or hard-limited next run.
+
+All gameplay agents receive the total match length, current tick, and ticks remaining in every decision. Visible fires include their numeric intensity. The shared rules explain that higher intensity spreads more readily, intensity 3 is the maximum, and a threatening intensity-3 fire requires both firefighters on the same coordinates in the same tick.
 
 The commentator is an omniscient observer, not a sixth player. It sees the full current map and every message the team sent, even when that team's transport did not deliver the message. To protect experimental fairness, it runs only after the outcome is fixed and its tokens/cost never enter team metrics. `--commentary` generates it eagerly; opening or exporting any historical replay without commentary generates it automatically. By default the commentator uses the local Claude subscription with Haiku, independently of the gameplay provider/model, so OpenAI recordings do not require an OpenAI key merely to narrate them. Override `commentator.backend` and `commentator.model` when desired; set both to `same` to reuse the gameplay model.
 

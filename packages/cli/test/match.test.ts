@@ -30,9 +30,13 @@ class FakeLlm implements LlmClient {
   readonly backend = "api" as const;
   readonly model = "fake";
   calls = 0;
+  systems: string[] = [];
+
+  constructor(private finishSubagents = true) {}
 
   async decide(req: DecideRequest): Promise<DecideResult> {
     this.calls++;
+    this.systems.push(req.system);
     const names = new Set(req.tools.map((t) => t.name));
     const tool_calls: DecideResult["tool_calls"] = [];
     const call = async (name: string, input: Record<string, unknown>) => {
@@ -57,8 +61,8 @@ class FakeLlm implements LlmClient {
           req.user.includes(`${body} (${body === "scout" ? "scout" : "firefighter"}): NO`)
         )
           await call("spawn", { body, brief: `explore from tick ${tick}` });
-    } else if (names.has("finish") && tick >= 2) {
-      await call("finish", { report: "done exploring" });
+    } else if (names.has("finish") && tick >= 2 && this.finishSubagents) {
+      await call("finish", { outcome: "completed", report: "done exploring" });
     } else {
       await call("move_to", { x: 10, y: 1 });
       if (names.has("send_message") && tick === 0) {
@@ -124,10 +128,22 @@ class FakeTransport implements Transport {
   async teardown() {}
 }
 
-async function record(teams: TeamFactory[], ticks: number, llm: LlmClient | null) {
+async function record(
+  teams: TeamFactory[],
+  ticks: number,
+  llm: LlmClient | null,
+  extraOverrides: Record<string, unknown> = {},
+) {
   const dir = tmp();
   const { config } = resolveConfig({
-    overrides: { seed: 11, ticks, tick_ms: 1000, teams: teams.map((t) => t.type), llm: { backend: "api" } },
+    overrides: {
+      seed: 11,
+      ticks,
+      tick_ms: 1000,
+      teams: teams.map((t) => t.type),
+      llm: { backend: "api" },
+      ...extraOverrides,
+    },
   });
   const file = join(dir, "m.sqlite");
   const writer = new RecordingWriter(file);
@@ -162,6 +178,7 @@ describe("config", () => {
     expect(config.fire.growth_every).toBe(5);
     expect(config.commentator.backend).toBe("claude-code");
     expect(config.commentator.model).toMatch(/haiku/);
+    expect(config.subagents.max_lifetime_ticks).toBe(0);
   });
 
   it("redacts secret-looking keys", () => {
@@ -185,7 +202,7 @@ describe("recording and replay", () => {
     expect(new Set(initialHashes)).toEqual(new Set([initialHashes[0]]));
     expect(b.frames.filter((f) => f.kind === "tick")).toHaveLength(62);
     expect(b.frames.at(-1)?.kind).toBe("end");
-    expect(b.header.config.prompt_version).toBe("4");
+    expect(b.header.config.prompt_version).toBe("5");
     const db = openRecording(file);
     const cfg = readConfig(db);
     db.close();
@@ -211,6 +228,8 @@ describe("LLM teams (fake model)", () => {
     expect(llm.calls).toBeGreaterThanOrEqual(5);
     const frames = loadBundle(file).frames;
     expect(frames.some((f) => f.kind === "event" && f.type === "order_issued")).toBe(true);
+    expect(llm.systems[0]).toContain("CURRENT MATCH TIME: tick");
+    expect(llm.systems[0]).toContain("Every visible fire is reported with a numeric intensity");
     const msgs = frames.filter((f) => f.kind === "message");
     expect(msgs.length).toBeGreaterThanOrEqual(5); // every message wakes the others, who may send again (capped per tick)
     const consumed = frames.filter((f) => f.kind === "delivery" && f.stage === "consumed");
@@ -280,5 +299,30 @@ describe("LLM teams (fake model)", () => {
     expect(reports[0]!.kind === "message" && reports[0]!.text).toMatch(/SEEN:/);
     const m = computeMetrics(file);
     expect(m.worlds[0]!.orchestrator_queue_median_ms).not.toBeNull();
+  });
+
+  it("keeps sub-agents alive until they report unless a hard lifetime is explicitly enabled", async () => {
+    const sub: TeamFactory = {
+      type: "subagents",
+      label: "Sub-agents",
+      usesLlm: true,
+      create: () => new SubagentTeam(),
+    };
+    const taskDriven = await record([sub], 10, new FakeLlm(false));
+    const taskDrivenReports = loadBundle(taskDriven.file).frames.filter(
+      (frame) => frame.kind === "message" && frame.channel === "report",
+    );
+    expect(taskDrivenReports).toHaveLength(0);
+
+    const capped = await record([sub], 10, new FakeLlm(false), {
+      subagents: { max_lifetime_ticks: 8 },
+    });
+    const cappedReports = loadBundle(capped.file).frames.filter(
+      (frame) => frame.kind === "message" && frame.channel === "report",
+    );
+    expect(cappedReports.length).toBeGreaterThan(0);
+    expect(cappedReports[0]!.kind === "message" && cappedReports[0]!.text).toContain(
+      "Hard 8-tick safety limit",
+    );
   });
 });

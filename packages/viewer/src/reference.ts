@@ -119,7 +119,7 @@ export function renderRulesPage(root: HTMLElement): void {
       <tr><td>Perfect communication</td><td>Every agent receives the team's combined current vision. It is an omniscient reference condition, not a chat system.</td></tr>
       <tr><td>Mentions only</td><td>A room message is delivered only to the named teammates. Only those recipients wake.</td></tr>
       <tr><td>Room broadcast</td><td>Every room message is delivered to every teammate; mentions merely mark the intended recipients.</td></tr>
-      <tr><td>Subagents</td><td>An orchestrator spawns isolated workers for physical bodies. A worker cannot receive updates or talk to peers; it reports once when finished or expired. A replacement has fresh memory but inherits the body's current position and state.</td></tr>
+      <tr><td>Subagents</td><td>An orchestrator gives an isolated worker one complete assignment. The worker independently observes and adapts until it reports verified completion or unrecoverable blockage. A replacement gets a fresh brief and inherits the body's physical state. A hard tick cutoff is optional and disabled by default.</td></tr>
     </tbody></table></div></section>
 
     <section><h2>AI broadcast booth</h2><div class="rule-cards">

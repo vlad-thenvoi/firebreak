@@ -41,6 +41,7 @@ export interface MatchConfig {
     order_log: number;
     max_decisions_per_tick: number;
   };
+  /** 0 keeps a sub-agent alive until it reports completion/blockage; positive values opt into a hard cap. */
   subagents: { max_lifetime_ticks: number };
   commentator: {
     enabled: boolean;
@@ -89,7 +90,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
     clear_debris_ticks: G.clear_debris_ticks,
   },
   agent: { message_window: 30, heartbeat_ticks: 3, order_log: 5, max_decisions_per_tick: 3 },
-  subagents: { max_lifetime_ticks: 8 },
+  subagents: { max_lifetime_ticks: 0 },
   commentator: {
     enabled: false,
     interval_ticks: 10,

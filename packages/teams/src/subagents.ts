@@ -24,12 +24,21 @@ import { z } from "zod";
 
 export const ORCHESTRATOR = "orchestrator";
 
-const SUBAGENT_COMMS = `You are a SUB-AGENT spawned by your team's orchestrator (the commander) to control this body for one task.
+const SUBAGENT_COMMS = (
+  lifetime: number,
+) => `You are a SUB-AGENT spawned by your team's orchestrator (the commander) to control this body for one task.
 - You cannot talk to anyone. You cannot receive messages. Nobody can interrupt you.
-- Work on your brief using your orders. When the task is done, impossible, or no longer makes sense, call finish(report) with a short report for the orchestrator: what you did and anything important you saw.
-- Everything you saw is attached to your report automatically. You end after a few ticks at most, even if you do not finish.`;
+- Own the assignment across as many decisions and ticks as it needs. Observe progress, adapt after completed or blocked orders, and keep working independently.
+- Do NOT finish merely because you issued an order or reached an arbitrary number of ticks. Call finish(outcome, report) only after you verify the assignment is complete, or after you determine it is blocked/impossible and cannot recover with your role.
+- Everything you saw is attached to your report automatically. Only that final report wakes the orchestrator; after you end, it may spawn a fresh sub-agent with a new brief.${
+  lifetime > 0
+    ? `\n- This run opted into a hard safety limit of ${lifetime} ticks. Finish and report before then when possible.`
+    : "\n- There is no fixed tick limit. You remain responsible for this assignment until you report completion or blockage."
+}`;
 
 const ORCHESTRATOR_PROMPT = (map: string, lifetime: number) => `${RULES_TEXT}
+
+MATCH CLOCK: the match length and current tick are stated in every decision. Use the remaining ticks when assigning travel and deciding which objectives can still be completed.
 
 ${map}
 
@@ -40,7 +49,11 @@ YOUR TEAM (bodies): scout (moves 2/tick, sees 5 tiles, gets the wind forecast), 
 
 HOW YOU CONTROL THE TEAM
 - spawn(body, brief) starts a sub-agent that controls that body with your brief (e.g. "go to (8,16) and put out the fire there; ff2 is coming too").
-- A sub-agent works on its own, cannot receive messages and cannot talk to other sub-agents. It reports back when done, blocked, or after at most ${lifetime} ticks.
+- A sub-agent works on its own, cannot receive messages and cannot talk to other sub-agents. It owns the assignment until it reports verified completion or an unrecoverable blockage.${
+  lifetime > 0
+    ? ` This run opts into a hard ${lifetime}-tick safety limit.`
+    : " There is no fixed tick limit."
+}
 - At most one sub-agent per body at a time. A body without a sub-agent keeps doing its last order and then waits.
 - You are woken when reports arrive, and every few ticks. Idle bodies waste time: keep every body busy (e.g. send firefighters toward likely fire areas while the scout explores). Give precise briefs with coordinates.
 - Act immediately: call your tools first. Write at most one short sentence, or nothing.`;
@@ -101,7 +114,7 @@ export class SubagentTeam implements TeamController {
     const lifetime = world.config.subagents.max_lifetime_ticks;
     this.orchestratorSystem = ORCHESTRATOR_PROMPT(renderMapText(world.scenario), lifetime);
     for (const a of this.state.agents)
-      this.subSystems[a.id] = systemPrompt(world.scenario, a.id, a.role, SUBAGENT_COMMS);
+      this.subSystems[a.id] = systemPrompt(world.scenario, a.id, a.role, SUBAGENT_COMMS(lifetime));
     this.orchestratorTools = [
       {
         name: "spawn",
@@ -125,7 +138,8 @@ export class SubagentTeam implements TeamController {
       if (l.finished) continue;
       this.recordSightings(l, observe(this.world.scenario, state, l.body));
       l.agent.onTick(state, events);
-      if (state.tick - l.spawned >= lifetime) this.finish(l, "(time limit reached; sub-agent stopped)");
+      if (lifetime > 0 && state.tick - l.spawned >= lifetime)
+        this.finish(l, "blocked", `Hard ${lifetime}-tick safety limit reached before task completion.`);
     }
     const idle = state.agents.filter((a) => !this.live.has(a.id)).map((a) => a.id);
     if (state.tick - this.lastDecisionTick >= this.world.config.agent.heartbeat_ticks && idle.length) {
@@ -163,12 +177,12 @@ export class SubagentTeam implements TeamController {
     return parts.join("; ") || "nothing notable";
   }
 
-  private finish(l: Live, text: string) {
+  private finish(l: Live, outcome: "completed" | "blocked", text: string) {
     if (l.finished) return;
     l.finished = true;
     l.agent.stop();
     this.live.delete(l.body);
-    const full = `${text.trim()} | SEEN: ${this.sightingsText(l.seen)}`;
+    const full = `${outcome.toUpperCase()}: ${text.trim()} | SEEN: ${this.sightingsText(l.seen)}`;
     const { id, t_ms } = this.log.sent(l.body, { to: [ORCHESTRATOR], channel: "report", text: full });
     this.log.delivered(id, ORCHESTRATOR);
     this.reports.push({ id, from: l.body, tick: this.state.tick, text: full, sent_ms: t_ms });
@@ -220,8 +234,12 @@ export class SubagentTeam implements TeamController {
           ...orderToolsFor(a.role),
           {
             name: "finish",
-            description: "End this sub-agent and report back to the orchestrator.",
-            schema: { report: z.string() },
+            description:
+              "End this sub-agent and send its only report. Use completed only after verifying the assigned objective is done; use blocked only after recovery is impossible.",
+            schema: {
+              outcome: z.enum(["completed", "blocked"]),
+              report: z.string().describe("what was achieved or why it is impossible, plus useful findings"),
+            },
           },
         ],
         observe: (s) => observe(world.scenario, s, body),
@@ -230,11 +248,16 @@ export class SubagentTeam implements TeamController {
             consumed = true;
             this.log.consumed(id, body);
           }
-          return `YOUR BRIEF from the orchestrator (spawned at tick ${live.spawned}): ${brief}`;
+          return [
+            `YOUR ASSIGNMENT from the orchestrator (spawned at tick ${live.spawned}): ${brief}`,
+            `ACCUMULATED SIGHTINGS during this assignment: ${this.sightingsText(live.seen)}`,
+            "Keep ownership of this assignment. Report only after verified completion or unrecoverable blockage.",
+          ].join("\n");
         },
         executeOther: async (name, input) => {
           if (name !== "finish") return { text: `unknown tool ${name}`, isError: true };
-          queueMicrotask(() => this.finish(live, String(input.report ?? "")));
+          const outcome = input.outcome === "blocked" ? "blocked" : "completed";
+          queueMicrotask(() => this.finish(live, outcome, String(input.report ?? "")));
           return { text: "report sent; this sub-agent ends now", isError: false };
         },
       }),
@@ -301,8 +324,9 @@ export class SubagentTeam implements TeamController {
       payload: { reasons },
     });
     const started = w.now();
+    const decisionSystem = `${this.orchestratorSystem}\n\nCURRENT MATCH TIME: tick ${s.tick} of ${w.config.ticks}; ${w.config.ticks - s.tick} ticks remain. Assign only work that can matter within that time.`;
     const res = await w.llm!.decide({
-      system: this.orchestratorSystem,
+      system: decisionSystem,
       user,
       tools: this.orchestratorTools,
       maxTurns: w.config.llm.max_turns_per_decision,
@@ -326,7 +350,7 @@ export class SubagentTeam implements TeamController {
       cache_read_tokens: res.cache_read_tokens,
       cost_usd: res.cost_usd,
       cost_estimated: res.cost_estimated,
-      ...(w.config.record.prompts ? { prompt: user } : {}),
+      ...(w.config.record.prompts ? { prompt: `SYSTEM\n${decisionSystem}\n\nUSER\n${user}` } : {}),
       response: res.response,
       tool_calls: res.tool_calls,
       ...(res.error ? { error: res.error } : {}),

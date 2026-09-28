@@ -162,17 +162,29 @@ export class Timeline {
         calls++;
       }
     let stale = 0;
-    let joint = 0;
     for (const e of w.events) {
       if (e.t_ms > t) continue;
       if (e.type === "order_blocked" && STALE_REASONS.has(String(e.payload.reason))) stale++;
-      if (e.type === "joint_needed") joint++;
     }
     let messages = 0;
     for (const m of w.messages) if (m.t_ms <= t) messages++;
     let idle = 0;
+    let joint = 0;
     for (let i = 1; i <= tick && i < w.ticks.length; i++) {
-      for (const a of w.ticks[i]!.state.agents) if (a.order_status !== "active") idle++;
+      const state = w.ticks[i]!.state;
+      for (const a of state.agents) if (a.order_status !== "active") idle++;
+      for (const fire of state.fires) {
+        if (fire.intensity !== 3) continue;
+        const assigned = state.agents.filter(
+          (agent) =>
+            agent.role === "firefighter" &&
+            agent.order_status === "active" &&
+            agent.order?.type === "extinguish" &&
+            agent.order.x === fire.pos[0] &&
+            agent.order.y === fire.pos[1],
+        ).length;
+        if (assigned < 2) joint++;
+      }
     }
     return { cost, calls, stale, joint, messages, idle };
   }

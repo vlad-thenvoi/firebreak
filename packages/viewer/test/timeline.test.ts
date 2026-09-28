@@ -70,4 +70,28 @@ describe("viewer outcome timeline", () => {
       0,
     ]);
   });
+
+  it("counts intensity-3 fire-ticks without two assigned firefighters", () => {
+    const { scenario, timeline, addTick } = fixture();
+    const uncovered = structuredClone(scenario.initial);
+    uncovered.tick = 1;
+    uncovered.fires = [{ ...uncovered.fires[0]!, intensity: 3 }];
+    const covered = structuredClone(uncovered);
+    covered.tick = 2;
+    for (const firefighter of covered.agents.filter((agent) => agent.role === "firefighter")) {
+      firefighter.order_status = "active";
+      firefighter.order = {
+        type: "extinguish",
+        x: covered.fires[0]!.pos[0],
+        y: covered.fires[0]!.pos[1],
+      };
+    }
+    addTick(0, structuredClone(scenario.initial));
+    addTick(1, uncovered);
+    addTick(2, covered);
+
+    const world = timeline.worlds.get("w0-none")!;
+    expect(timeline.counters(world, 5_000, 1).joint).toBe(1);
+    expect(timeline.counters(world, 10_000, 2).joint).toBe(1);
+  });
 });
