@@ -185,3 +185,30 @@ The first synchronized five-condition Codex attempt exposed a backend error befo
 Prompt v8 gives every logical agent a real provider session on the subscription backends. Claude resumes the same Agent SDK transcript; Codex sends later `turn/start` calls to the same isolated App Server thread. A sub-agent orchestrator has one match-long session, while each spawned worker gets a fresh assignment-scoped session and ends with that assignment. Later turns still receive the complete current observation, current/remaining ticks, and new wake reasons, but only newly delivered messages and order-log changes are appended. Provider-reported cumulative thread usage is converted to per-turn deltas before it reaches recording and budget accounting.
 
 This changes both context and token behavior, so prompt-v8 results are not comparable with any table above. Validate the reduction with a short subscription smoke run before starting another 60- or 120-tick experiment.
+
+## 12. Prompt-v8 persistent-session comparison
+
+Eight completed 60-tick matches used seed 42, synchronized ticks, prompt v8, engine 0.3.0, low reasoning effort, task-lived sub-agents, and all five communication conditions. Each model ran twice: Claude Opus 5.5, GPT-5.6 Sol, Claude Sonnet 4.5, and GPT-5.6 Luna. Reusing seed 42 holds the wildfire world fixed and measures model sampling variance; it does not measure generalization across maps. Every recording replay-verified, and each has five saved commentary tracks.
+
+| Model/run | Recording | None | Perfect | Sub-agents | Mentions | Broadcast | Winner |
+|---|---|---:|---:|---:|---:|---:|---|
+| Sol 1 | `20260928-212300-s42-c1kc` | 3 | 50 | 19 | 38 | 20 | Perfect |
+| Opus 1 | `20260928-214648-s42-bbfx` | -36 | 80 | -15 | 53 | 35 | Perfect |
+| Sol 2 | `20260928-221326-s42-p6x7` | -42 | 47 | 29 | 67 | 50 | Mentions |
+| Opus 2 | `20260928-223014-s42-geq6` | -33 | 37 | 61 | 55 | 10 | Sub-agents |
+| Sonnet 1 | `20260928-230133-s42-9669` | 27 | 62 | -46 | -16 | 11 | Perfect |
+| Luna 1 | `20260928-232749-s42-slxp` | -28 | 19 | -22 | 8 | 37 | Broadcast |
+| Sonnet 2 | `20260928-235046-s42-j8g9` | -14 | 43 | -52 | 20 | 36 | Perfect |
+| Luna 2 | `20260929-040758-s42-0v18` | -19 | 73 | -23 | 38 | 0 | Perfect |
+
+Score summaries (mean / median; sample standard deviation in parentheses):
+
+| Block | None | Perfect | Sub-agents | Mentions | Broadcast |
+|---|---:|---:|---:|---:|---:|
+| Opus + Sol (4) | -27.0 / -34.5 (20.3) | **53.5 / 48.5 (18.5)** | 23.5 / 24.0 (31.3) | 53.3 / **54.0** (11.9) | 28.8 / 27.5 (17.5) |
+| Sonnet + Luna (4) | -8.5 / -16.5 (24.4) | **49.3 / 52.5 (23.7)** | -35.8 / -34.5 (15.5) | 12.5 / 14.0 (22.6) | 21.0 / 23.5 (18.5) |
+| All eight | -17.8 / -23.5 (23.0) | **51.4 / 48.5 (19.8)** | -6.1 / -18.5 (39.1) | 32.9 / 38.0 (27.5) | 24.9 / 27.5 (17.2) |
+
+Perfect won five matches, while Mentions, Broadcast, and Sub-agents won one each. Across all eight, Perfect averaged 3.25 civilians evacuated and 1.75 lost, compared with 2.63/2.38 for Mentions, 2.50/2.50 for Broadcast, 1.25/3.75 for Sub-agents, and 0.75/4.25 for None. Those rescue outcomes dominate the scoring: a lost civilian costs 20 points, whereas extinguishing one fire tile adds only one. None and Sub-agents extinguished more fires on average than Perfect but could not offset their civilian losses.
+
+Perfect also achieved its result with about 214 model calls per match, versus 284 for Mentions and 447 for Broadcast. Broadcast averaged about 106 messages and created the largest wake/context load without a consistent score benefit. The result supports Perfect as the strongest information condition on this fixed world, but not as a general theorem: there are only two samples per model, the same seed is reused, and the pooled Opus/Sol and Sonnet/Luna rows mix models and backends. Model-specific comparisons remain the formal unit.
