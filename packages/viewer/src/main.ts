@@ -2,6 +2,7 @@ import type { MatchHeader, RecordingBundle, StreamFrame } from "@firebreak/engin
 import { Player } from "./player";
 import { renderRulesPage, rulesHref } from "./reference";
 import "./style.css";
+import { applyViewerTheme, createThemeToggle, loadViewerTheme } from "./theme";
 import { Timeline } from "./timeline";
 
 declare global {
@@ -12,6 +13,7 @@ declare global {
 
 const app = document.getElementById("app")!;
 const params = new URLSearchParams(location.search);
+applyViewerTheme(loadViewerTheme());
 
 function play(bundle: RecordingBundle, name?: string, commentaryError?: string) {
   const tl = new Timeline(bundle.header);
@@ -76,10 +78,11 @@ function live() {
 }
 
 async function index() {
-  app.innerHTML = `<div class="index"><h1>FIRE<span style="color:var(--accent)">BREAK</span></h1>
+  app.innerHTML = `<div class="index"><div class="index-actions" id="index-actions"></div><h1>FIRE<span style="color:var(--accent)">BREAK</span></h1>
     <div class="meta">Teams of AI agents fight the same wildfire. The only difference is how they communicate.</div>
     <p class="index-nav"><a href="${rulesHref()}">Rules and map legend</a></p>
     <div id="live-slot"></div><div id="list" class="empty">Loading recordings…</div></div>`;
+  document.getElementById("index-actions")!.append(createThemeToggle());
   try {
     const status = (await (await fetch("/api/live/status")).json()) as {
       running: boolean;

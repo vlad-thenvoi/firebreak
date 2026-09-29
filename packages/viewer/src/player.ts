@@ -3,6 +3,7 @@ import { compactRoleLegend, createLegendDialog, rulesHref } from "./reference";
 import { HQ_ID, drawBoard, type HitTarget } from "./render";
 import type { OutcomeMetric, Timeline, WorldTimeline } from "./timeline";
 import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from "./preferences";
+import { createThemeToggle } from "./theme";
 
 const SPEEDS = [0.5, 1, 2, 4, 10];
 const TIMELINE_MARKERS = {
@@ -23,7 +24,7 @@ const CHART_METRICS: Record<OutcomeMetric, { label: string; help: string; better
   houses_destroyed: { label: "Houses destroyed", help: "Cumulative houses destroyed", better: "low" },
 };
 
-const TEAM_COLORS = ["#ff7a3d", "#7cfc9a", "#c792ea", "#5bc0eb", "#ffd166", "#ff6b9d"];
+const TEAM_COLOR_VARS = ["--team-1", "--team-2", "--team-3", "--team-4", "--team-5", "--team-6"];
 
 interface Card {
   world: WorldTimeline;
@@ -149,7 +150,12 @@ export class Player {
     const subagentsButton = el("button", "top-action", "Sub-agents");
     subagentsButton.title = "View this replay's sub-agent lifecycle and configure the next run";
     subagentsButton.addEventListener("click", () => this.subagentDialog.showModal());
-    help.append(viewButton, legendButton, rules, subagentsButton);
+    const themeButton = createThemeToggle(() => {
+      this.chartRenderKey = "";
+      this.lastVersion = -1;
+      requestAnimationFrame(() => this.layout());
+    });
+    help.append(viewButton, legendButton, rules, subagentsButton, themeButton);
     top.append(brand, this.badge, meta, compactRoleLegend(), el("div", "spacer"), help, toggles);
 
     const main = el("div", "main");
@@ -520,7 +526,7 @@ export class Player {
         this.drawOutcomeChart();
       });
       const swatch = el("i");
-      swatch.style.background = TEAM_COLORS[index % TEAM_COLORS.length]!;
+      swatch.style.background = `var(${TEAM_COLOR_VARS[index % TEAM_COLOR_VARS.length]!})`;
       label.append(checkbox, swatch, document.createTextNode(card.world.label));
       teamControls.append(label);
     });
@@ -804,6 +810,14 @@ export class Player {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const width = rect.width;
     const height = rect.height;
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string) => styles.getPropertyValue(name).trim();
+    const muted = color("--muted");
+    const grid = color("--chart-grid");
+    const zero = color("--chart-zero");
+    const playhead = color("--chart-playhead");
+    const pointRing = color("--chart-point-ring");
+    const teamColors = TEAM_COLOR_VARS.map(color);
 
     const selected = this.cards
       .map((card, index) => ({ card, index }))
@@ -817,18 +831,19 @@ export class Player {
       currentTick,
       pixelWidth,
       pixelHeight,
+      document.documentElement.dataset.theme,
     ].join("|");
     if (renderKey === this.chartRenderKey) return;
     this.chartRenderKey = renderKey;
     ctx.clearRect(0, 0, width, height);
     const series = selected.map(({ card, index }) => ({
       card,
-      color: TEAM_COLORS[index % TEAM_COLORS.length]!,
+      color: teamColors[index % teamColors.length]!,
       points: this.tl.outcomeSeries(card.world, this.chartMetric),
     }));
     const allValues = series.flatMap((item) => item.points.map((point) => point.value));
     if (!allValues.length) {
-      ctx.fillStyle = "#9097b1";
+      ctx.fillStyle = muted;
       ctx.font = "13px system-ui";
       ctx.fillText("Select at least one communication style.", 18, 30);
       this.chartValues.replaceChildren();
@@ -857,13 +872,13 @@ export class Player {
     for (let i = 0; i <= 4; i++) {
       const value = minValue + ((maxValue - minValue) * i) / 4;
       const py = y(value);
-      ctx.strokeStyle = value === 0 ? "#596078" : "#2e3348";
+      ctx.strokeStyle = value === 0 ? zero : grid;
       ctx.lineWidth = value === 0 ? 1.4 : 1;
       ctx.beginPath();
       ctx.moveTo(margin.left, py);
       ctx.lineTo(width - margin.right, py);
       ctx.stroke();
-      ctx.fillStyle = "#9097b1";
+      ctx.fillStyle = muted;
       const label = Math.abs(maxValue - minValue) < 8 ? Number(value.toFixed(1)) : Math.round(value);
       ctx.fillText(String(label), margin.left - 8, py);
     }
@@ -871,7 +886,7 @@ export class Player {
     ctx.textBaseline = "top";
     for (let i = 0; i <= 4; i++) {
       const tick = Math.round((maxTick * i) / 4);
-      ctx.fillStyle = "#9097b1";
+      ctx.fillStyle = muted;
       ctx.fillText(String(tick), x(tick), height - margin.bottom + 8);
     }
     ctx.textAlign = "right";
@@ -891,7 +906,7 @@ export class Player {
     }
 
     const playheadX = x(currentTick);
-    ctx.strokeStyle = "rgba(232, 233, 240, 0.72)";
+    ctx.strokeStyle = playhead;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
@@ -922,7 +937,7 @@ export class Player {
       ctx.beginPath();
       ctx.arc(playheadX, y(value), 4, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "#11131c";
+      ctx.strokeStyle = pointRing;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
@@ -940,7 +955,8 @@ export class Player {
     visible.forEach((card) => {
       const item = el("span");
       const swatch = el("i");
-      swatch.style.background = TEAM_COLORS[this.cards.indexOf(card) % TEAM_COLORS.length]!;
+      const index = this.cards.indexOf(card) % TEAM_COLOR_VARS.length;
+      swatch.style.background = `var(${TEAM_COLOR_VARS[index]!})`;
       item.append(swatch, document.createTextNode(card.world.label));
       this.timelineTeamKey.append(item);
     });

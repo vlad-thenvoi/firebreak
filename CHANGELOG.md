@@ -21,6 +21,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Added a full, untruncated team-message transcript for every replay card.
 - Added recorded sub-agent assignment ages and a diagnostic long-running flag that never kills or interrupts the worker.
 - Added a standalone prompt-v8 benchmark report with exact outcomes from all eight persistent-session matches, complete mean/median tables, model-specific results, and conclusions.
+- Added a persisted Dark/Light viewer theme toggle across the recording index, replay, dialogs, charts, and rules reference.
 
 ### Changed
 

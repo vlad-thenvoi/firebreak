@@ -1,5 +1,6 @@
 import { DEFAULT_GAME_CONFIG, ROLES, SCORE_VALUES, type Role, type TileKind } from "@firebreak/engine";
 import { ROLE_COLOR, TILE_COLOR } from "./render";
+import { createThemeToggle } from "./theme";
 
 const ROLE_MARKS: { mark: string; role: Role; name: string }[] = [
   { mark: "S", role: "scout", name: "Scout" },
@@ -133,4 +134,5 @@ export function renderRulesPage(root: HTMLElement): void {
     <section class="reference-legend"><h2>Viewer legend</h2>${legendSections()}</section>
     <footer>Defaults shown here describe the standard scenario. Every recording stores its exact resolved configuration and prompts.</footer>
   </main>`;
+  root.querySelector(".reference-nav")!.append(createThemeToggle());
 }
