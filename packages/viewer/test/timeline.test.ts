@@ -21,6 +21,22 @@ function fixture() {
 }
 
 describe("viewer outcome timeline", () => {
+  it("ends completed replays at the final simulation tick, not the LLM drain timestamp", () => {
+    const { scenario, timeline, addTick } = fixture();
+    addTick(0, structuredClone(scenario.initial));
+    const final = structuredClone(scenario.initial);
+    final.tick = 1;
+    addTick(1, final);
+    timeline.add({
+      kind: "end",
+      t_ms: 35_000,
+      status: "completed",
+      results: [{ world_id: "w0-none", team: "none", score: 0, cost_usd: 0 }],
+    });
+
+    expect(timeline.durationMs).toBe(5_000);
+  });
+
   it("reads mission outcomes at the selected replay tick", () => {
     const { scenario, timeline, addTick } = fixture();
     const initial = structuredClone(scenario.initial);

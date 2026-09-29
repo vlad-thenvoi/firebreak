@@ -314,6 +314,8 @@ Why store the **full state every tick**: at 20×20 × 60 ticks × 6 worlds it ta
 ### 8.4 Live and replay use the same code
 The viewer only ever consumes an **event stream**. Live mode is a websocket that tails the match as it's written. Replay mode reads the recording and releases events on the virtual clock. Same renderer, same panels.
 
+A completed replay ends at its final simulation tick. Draining an LLM call that was already in flight may delay the recording's wall-clock end frame, but that cleanup time cannot change the world and does not extend the replay scrubber. The runner does not wake agents after applying the last playable tick and rejects orders arriving after play has closed.
+
 ### 8.5 Verification
 `firebreak verify <match>` re-runs the engine from the seed and the recorded orders (their arrival ticks) and compares the state hash on every tick. This catches engine non-determinism and proves the recording is complete. LLMs are never re-run.
 

@@ -61,6 +61,7 @@ export class MatchRunner {
   private ac = new AbortController();
   private abortReason: string | null = null;
   private worlds: World[] = [];
+  private acceptingOrders = true;
   readonly budget: Budget;
 
   constructor(private o: MatchOptions) {
@@ -104,6 +105,7 @@ export class MatchRunner {
   private handle(w: World): WorldHandle {
     const emit = (f: StreamFrame) => this.emit(f);
     const now = () => this.clock.now();
+    const canAcceptOrders = () => this.acceptingOrders;
     return {
       worldId: w.id,
       team: w.factory.type,
@@ -115,7 +117,7 @@ export class MatchRunner {
       state: () => w.state,
       now,
       submitOrder(agentId, order) {
-        if (w.state.ended) return { ok: false, error: "the match is over" };
+        if (!canAcceptOrders() || w.state.ended) return { ok: false, error: "the match is over" };
         const norm = normalizeOrder(w.state, agentId, order);
         order = norm.order;
         const err = validateOrder(w.state, agentId, order);
@@ -212,8 +214,6 @@ export class MatchRunner {
         this.frameEvents(w, tick, t_ms, r.events);
         stepped.push([w, r.events]);
       }
-      for (const [w, events] of stepped) w.controller.onTick(w.state, events);
-      if (this.worlds.every((w) => w.state.ended)) break;
       if (tick % 10 === 0) {
         this.o.log?.(
           `tick ${tick}: ` +
@@ -221,7 +221,15 @@ export class MatchRunner {
             ` · $${this.budget.usd.toFixed(3)}`,
         );
       }
+      const finished = tick >= cfg.ticks || this.worlds.every((w) => w.state.ended);
+      if (finished) {
+        this.acceptingOrders = false;
+        break;
+      }
+      for (const [w, events] of stepped) w.controller.onTick(w.state, events);
     }
+
+    this.acceptingOrders = false;
 
     // Stop new decisions, let in-flight ones finish so they are recorded, then clean up.
     for (const w of this.worlds) {

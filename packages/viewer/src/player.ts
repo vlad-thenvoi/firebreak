@@ -622,7 +622,8 @@ export class Player {
     this.lastFrame = now;
     const dur = this.tl.durationMs;
     if (this.o.mode === "live" && this.followLive && this.liveOffset !== null) {
-      this.t = Math.min(now - this.liveOffset, this.tl.lastMs + this.tl.tickMs);
+      const liveEnd = this.tl.end ? dur : this.tl.lastMs + this.tl.tickMs;
+      this.t = Math.min(now - this.liveOffset, liveEnd);
     } else if (this.playing) {
       this.t = Math.min(dur, this.t + dt * this.speed);
       if (this.o.mode === "replay" && this.t >= dur) this.playing = false;
@@ -931,6 +932,7 @@ export class Player {
     ctx.clearRect(0, 0, cv.width, cv.height);
     const dur = Math.max(1, this.tl.durationMs);
     for (const m of this.tl.markers()) {
+      if (m.t > dur) continue;
       ctx.fillStyle = TIMELINE_MARKERS[m.type as keyof typeof TIMELINE_MARKERS]?.color ?? "#999";
       const x = (m.t / dur) * cv.width;
       ctx.fillRect(x - 1, 0, 2, cv.height * 0.35);

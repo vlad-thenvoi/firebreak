@@ -37,6 +37,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Tightened task-lived sub-agents in prompt v6: every spawn now requires observable `done_when` criteria, workers must report immediately when those criteria are met, and explicitly open-ended watch/patrol assignments are rejected without imposing a timer.
 - Increased the configurable default civilian survival window from 15 to 17 ticks and bumped the engine version to 0.3.0.
 - Documented the distinction between oracle-style perfect information, local room broadcast, and mention-delivered real Band rooms.
+- Fixed completed replay scrubbers extending past the final tick while in-flight model calls drained, and stopped agents from starting or submitting work after the last playable tick.
 
 ### Fairness and security
 

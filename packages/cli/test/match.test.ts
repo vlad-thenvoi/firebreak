@@ -255,6 +255,11 @@ describe("LLM teams (fake model)", () => {
     expect(result.status).toBe("completed");
     expect(llm.calls).toBeGreaterThanOrEqual(5);
     const frames = loadBundle(file).frames;
+    expect(
+      frames
+        .filter((frame) => frame.kind === "llm")
+        .every((frame) => frame.kind === "llm" && frame.started_ms < 6 * 5_000),
+    ).toBe(true);
     expect(frames.some((f) => f.kind === "event" && f.type === "order_issued")).toBe(true);
     expect(llm.systems[0]).toContain("CURRENT MATCH TIME: tick");
     expect(llm.systems[0]).toContain("Every visible fire is reported with a numeric intensity");

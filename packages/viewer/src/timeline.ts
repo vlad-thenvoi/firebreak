@@ -59,6 +59,7 @@ export class Timeline {
   worlds = new Map<string, WorldTimeline>();
   end: EndFrame | null = null;
   lastMs = 0;
+  private finalTickMs = 0;
   private messageIndex = new Map<string, MessageView>();
   version = 0;
 
@@ -94,6 +95,7 @@ export class Timeline {
       case "tick":
         w.ticks[f.tick] = f;
         this.lastMs = Math.max(this.lastMs, f.t_ms);
+        this.finalTickMs = Math.max(this.finalTickMs, f.t_ms);
         break;
       case "event":
         w.events.push(f);
@@ -120,7 +122,14 @@ export class Timeline {
 
   /** Match time of the last frame (or the end frame). */
   get durationMs(): number {
-    return this.end ? Math.max(this.end.t_ms, this.lastMs) : this.lastMs;
+    // A completed match can spend time draining already in-flight LLM calls after
+    // the final playable tick. Those calls cannot change the world, so they must
+    // not create a motionless tail at the end of the replay scrubber.
+    return this.end?.status === "completed"
+      ? this.finalTickMs
+      : this.end
+        ? Math.max(this.end.t_ms, this.lastMs)
+        : this.lastMs;
   }
 
   maxTick(w: WorldTimeline): number {
