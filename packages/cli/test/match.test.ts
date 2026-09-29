@@ -98,6 +98,17 @@ class FakeLlm implements LlmClient {
   }
 }
 
+class SlowFakeLlm extends FakeLlm {
+  constructor(private delayMs: number) {
+    super();
+  }
+
+  override async decide(req: DecideRequest): Promise<DecideResult> {
+    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    return super.decide(req);
+  }
+}
+
 /** In-memory broadcast transport, to exercise the send/deliver/consume path without a network. */
 class FakeTransport implements Transport {
   readonly name = "fake";
@@ -168,7 +179,6 @@ async function record(
     configSections: sections,
     onConfigSection: (s, v) => writer.setConfig(s, v),
     llm,
-    virtualTime: true,
   });
   writer.begin(runner.header(), sections);
   const result = await runner.run();
@@ -191,6 +201,7 @@ describe("config", () => {
     expect(config.commentator.backend).toBe("claude-code");
     expect(config.commentator.model).toMatch(/haiku/);
     expect(config.subagents.max_lifetime_ticks).toBe(0);
+    expect(config.clock.mode).toBe("synchronized");
   });
 
   it("redacts secret-looking keys", () => {
@@ -214,7 +225,7 @@ describe("recording and replay", () => {
     expect(new Set(initialHashes)).toEqual(new Set([initialHashes[0]]));
     expect(b.frames.filter((f) => f.kind === "tick")).toHaveLength(62);
     expect(b.frames.at(-1)?.kind).toBe("end");
-    expect(b.header.config.prompt_version).toBe("6");
+    expect(b.header.config.prompt_version).toBe("7");
     const db = openRecording(file);
     const cfg = readConfig(db);
     db.close();
@@ -227,6 +238,41 @@ describe("recording and replay", () => {
 });
 
 describe("LLM teams (fake model)", () => {
+  it("waits for decisions before advancing synchronized ticks and preserves realtime as an option", async () => {
+    const fake: TeamFactory = {
+      type: "slow-peer",
+      label: "Slow",
+      usesLlm: true,
+      create: () => new PeerTeam({ transport: null, view: "self" }),
+    };
+    const synchronized = await record([fake], 1, new SlowFakeLlm(15), { tick_ms: 1 });
+    const synchronizedFrames = loadBundle(synchronized.file).frames;
+    expect(
+      synchronizedFrames.filter((frame) => frame.kind === "event" && frame.type === "order_issued"),
+    ).toHaveLength(5);
+    const calls = synchronizedFrames.filter((frame) => frame.kind === "llm");
+    expect(calls).toHaveLength(5);
+    expect(
+      calls.every(
+        (frame) =>
+          frame.kind === "llm" &&
+          frame.started_ms === 0 &&
+          frame.ended_ms === 0 &&
+          (frame.latency_ms ?? 0) >= 10,
+      ),
+    ).toBe(true);
+
+    const realtime = await record([fake], 1, new SlowFakeLlm(15), {
+      tick_ms: 1,
+      clock: { mode: "realtime" },
+    });
+    expect(
+      loadBundle(realtime.file).frames.filter(
+        (frame) => frame.kind === "event" && frame.type === "order_issued",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("requires bounded sub-agent assignments with observable completion criteria", () => {
     expect(
       validateSubagentAssignment(

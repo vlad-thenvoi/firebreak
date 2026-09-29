@@ -1,6 +1,6 @@
 import { ROLES, renderMapText, type Observation, type Role, type Scenario } from "@firebreak/engine";
 
-export const PROMPT_VERSION = "6";
+export const PROMPT_VERSION = "7";
 
 const ROLE_TEXT: Record<Role, string> = {
   scout:
@@ -24,7 +24,7 @@ const ROLE_TEXT: Record<Role, string> = {
     "If a civilian is unreachable because of debris, make sure the engineer knows and rescue another one meanwhile. When you know of none, patrol the roads near houses.",
 };
 
-export const RULES_TEXT = `GAME: Wildfire. Your team of 5 defends a town from spreading wildfires. The match lasts a fixed number of ticks; the world advances every few seconds whether or not you act.
+export const RULES_TEXT = `GAME: Wildfire. Your team of 5 defends a town from spreading wildfires. The match lasts a fixed number of discrete ticks. Orders persist across ticks until they finish or become blocked.
 
 MAP (fixed layout; fires, civilians and debris are NOT shown — you only know them if you or a teammate saw them):
 Legend: . grass  T forest  H house  = road  ~ water  B bridge  S fire station (start)

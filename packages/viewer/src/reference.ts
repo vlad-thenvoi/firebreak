@@ -102,6 +102,7 @@ export function renderRulesPage(root: HTMLElement): void {
     </tbody></table></div></section>
 
     <section><h2>World rules</h2><div class="rule-cards">
+      <article><h3>Synchronized ticks</h3><p>By default, all triggered decisions and team-message follow-ups finish before every world advances one logical step. Model speed changes run time, not simulated reaction time.</p></article>
       <article><h3>Orders persist</h3><p>An order continues every tick until done, blocked, or replaced. Targeted actions automatically travel toward their target.</p></article>
       <article><h3>Fire grows and spreads</h3><p>Fire has intensity 1–3, grows every ${c.fire.growth_every} ticks when unfought, spreads faster downwind, and burns tiles out after ${c.fire.burnout_ticks} ticks.</p></article>
       <article><h3>People and buildings</h3><p>Civilians are lost if fire reaches them or their ${c.civilian_deadline}-tick deadline passes. A house at intensity 3 for ${c.fire.house_destroy_ticks} ticks is destroyed.</p></article>

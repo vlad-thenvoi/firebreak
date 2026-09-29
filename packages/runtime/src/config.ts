@@ -2,12 +2,14 @@ import { DEFAULT_GAME_CONFIG, type GameConfig } from "@firebreak/engine";
 import { parse } from "yaml";
 
 export type LlmBackend = "api" | "claude-code" | "openai" | "codex";
+export type ClockMode = "synchronized" | "realtime";
 
 /** The full, resolved configuration of a match (SPEC §11). */
 export interface MatchConfig {
   seed: number;
   ticks: number;
   tick_ms: number;
+  clock: { mode: ClockMode };
   teams: string[];
   llm: {
     backend: LlmBackend;
@@ -62,6 +64,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   seed: 42,
   ticks: G.ticks,
   tick_ms: 5000,
+  clock: { mode: "synchronized" },
   teams: ["none", "perfect", "chat-mentions", "chat-broadcast"],
   llm: {
     backend: "claude-code",
@@ -171,6 +174,8 @@ export function validateConfig(c: MatchConfig): void {
   if (!Number.isInteger(c.seed)) throw new Error("seed must be an integer");
   if (c.ticks < 1) throw new Error("ticks must be >= 1");
   if (c.tick_ms < 0) throw new Error("tick_ms must be >= 0");
+  if (!["synchronized", "realtime"].includes(c.clock.mode))
+    throw new Error(`unknown clock.mode ${c.clock.mode}`);
   if (!["api", "claude-code", "openai", "codex"].includes(c.llm.backend))
     throw new Error(`unknown llm.backend ${c.llm.backend}`);
   if (c.teams.length === 0) throw new Error("teams must not be empty");

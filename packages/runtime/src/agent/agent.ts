@@ -143,7 +143,7 @@ export class LlmAgent {
   private pump(): void {
     if (this.busy || this.stopped || this.reasons.size === 0 || !this.obs || this.o.world.signal.aborted)
       return;
-    // Guards against runaway loops (e.g. message ping-pong in virtual time); never reached at real LLM latency.
+    // Guards against runaway same-tick loops such as message ping-pong.
     if (this.decisionsThisTick >= this.o.world.config.agent.max_decisions_per_tick) return;
     this.decisionsThisTick++;
     this.busy = this.decide().finally(() => {
@@ -155,6 +155,10 @@ export class LlmAgent {
   /** Resolves when no decision is in flight. */
   async idle(): Promise<void> {
     while (this.busy) await this.busy;
+  }
+
+  isIdle(): boolean {
+    return this.busy === null;
   }
 
   stop(): void {
@@ -201,6 +205,7 @@ export class LlmAgent {
       payload: { reasons },
     });
     const started = w.now();
+    const wallStarted = performance.now();
     const id = `${w.worldId}-${this.id}-c${++callSeq}`;
     const decisionSystem = `${this.o.system}\n\nCURRENT MATCH TIME: tick ${obs.tick} of ${this.o.world.config.ticks}; ${obs.ticks_left} ticks remain. Plan only work that can matter within that time.`;
     const res = await this.o.llm.decide({
@@ -219,6 +224,7 @@ export class LlmAgent {
       agent_id: this.id,
       started_ms: started,
       ended_ms: w.now(),
+      latency_ms: performance.now() - wallStarted,
       input_tokens: res.input_tokens,
       output_tokens: res.output_tokens,
       cache_read_tokens: res.cache_read_tokens,

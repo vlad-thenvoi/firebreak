@@ -74,6 +74,7 @@ export class Player {
   private boardsEl!: HTMLElement;
   private scrub!: HTMLInputElement;
   private scrubMarks!: HTMLCanvasElement;
+  private timelineTeamKey!: HTMLElement;
   private clockEl!: HTMLElement;
   private playBtn!: HTMLButtonElement;
   private speedBtns: HTMLButtonElement[] = [];
@@ -122,6 +123,8 @@ export class Player {
 
   private build() {
     const h = this.tl.header;
+    const resolved = h.config.resolved as { clock?: { mode?: string } } | undefined;
+    const clockMode = resolved?.clock?.mode ?? "realtime";
     const shell = el("div", "shell");
     this.shell = shell;
     const top = el("div", "topbar");
@@ -131,7 +134,7 @@ export class Player {
     const meta = el(
       "div",
       "meta",
-      `seed ${h.seed} · ${h.ticks} ticks × ${h.tick_ms / 1000}s · ${h.match_id}`,
+      `seed ${h.seed} · ${h.ticks} ticks × ${h.tick_ms / 1000}s · ${clockMode === "synchronized" ? "synchronized" : "real time"} · ${h.match_id}`,
     );
     const toggles = el("div", "toggles");
     const help = el("div", "help-links");
@@ -261,7 +264,8 @@ export class Player {
       item.append(mark, document.createTextNode(label));
       timelineKey.append(item);
     }
-    controls.append(scrubWrap, this.clockEl, timelineKey);
+    this.timelineTeamKey = el("div", "timeline-team-key");
+    controls.append(scrubWrap, this.clockEl, this.timelineTeamKey, timelineKey);
     if (this.o.mode === "live") {
       const liveBtn = el("button", "", "● live");
       liveBtn.addEventListener("click", () => {
@@ -931,12 +935,27 @@ export class Player {
     const ctx = cv.getContext("2d")!;
     ctx.clearRect(0, 0, cv.width, cv.height);
     const dur = Math.max(1, this.tl.durationMs);
+    const visible = this.cards.filter((card) => card.visible && (!this.focused || card === this.focused));
+    this.timelineTeamKey.replaceChildren(el("span", "", "Event rows, top → bottom:"));
+    visible.forEach((card) => {
+      const item = el("span");
+      const swatch = el("i");
+      swatch.style.background = TEAM_COLORS[this.cards.indexOf(card) % TEAM_COLORS.length]!;
+      item.append(swatch, document.createTextNode(card.world.label));
+      this.timelineTeamKey.append(item);
+    });
+    const laneHeight = cv.height / Math.max(1, visible.length);
     for (const m of this.tl.markers()) {
       if (m.t > dur) continue;
+      const lane = visible.findIndex((card) => card.world.id === m.world_id);
+      if (!m.global && lane < 0) continue;
       ctx.fillStyle = TIMELINE_MARKERS[m.type as keyof typeof TIMELINE_MARKERS]?.color ?? "#999";
       const x = (m.t / dur) * cv.width;
-      ctx.fillRect(x - 1, 0, 2, cv.height * 0.35);
+      if (m.global) ctx.fillRect(x - 1, 0, 2, cv.height);
+      else ctx.fillRect(x - 1, lane * laneHeight, 2, Math.max(2, laneHeight - 1));
     }
+    cv.title =
+      "Team-specific outcomes use the labelled rows below. Shared wind and bridge events span every row.";
   }
 
   private renderInspector(t: number) {
@@ -945,7 +964,8 @@ export class Player {
     const f = this.tl.frameAt(w, t);
     const agentId = this.selected.agent;
     const call = this.tl.lastLlmCall(w, agentId, t);
-    const key = `${agentId}|${f?.tick}|${call?.id}`;
+    const inFlight = this.tl.inFlightLlmCall(w, agentId, t);
+    const key = `${agentId}|${f?.tick}|${call?.id}|${inFlight?.id}|${inFlight ? Math.floor(t / 1000) : ""}`;
     if (key === this.inspectorKey) return;
     this.inspectorKey = key;
     const a = f?.cur.agents.find((x) => x.id === agentId);
@@ -980,6 +1000,22 @@ export class Player {
       d.innerHTML = `<span class="who">${esc(m.from)} → ${esc(m.to.join(", ") || m.channel)}</span> <span class="meta">t${Math.floor(m.t_ms / this.tl.tickMs)}</span><br>${esc(m.text)}`;
       box.append(d);
     }
+    if (inFlight) {
+      box.append(el("h4", "", "Decision in progress"));
+      const elapsed = Math.max(0, t - inFlight.started_ms) / 1000;
+      const notice = el("div", "decision-in-flight");
+      notice.append(
+        el("b", "", `${elapsed.toFixed(1)}s elapsed`),
+        el(
+          "span",
+          "",
+          a?.order_status === "active"
+            ? "The model is still responding. The body continues its current active order meanwhile."
+            : "The model is still responding. This body cannot choose new work until the response completes.",
+        ),
+      );
+      box.append(notice);
+    }
     box.append(el("h4", "", "Last decision"));
     if (!call) {
       box.append(el("div", "meta", w.team.startsWith("bots") ? "Scripted bot: no LLM." : "No decision yet."));
@@ -989,7 +1025,7 @@ export class Player {
     const row = (k: string, v: string) => kv.append(el("span", "", k), el("span", "", v));
     row(
       "at",
-      `${(call.started_ms / 1000).toFixed(1)}s, took ${((call.ended_ms - call.started_ms) / 1000).toFixed(1)}s`,
+      `${(call.started_ms / 1000).toFixed(1)}s, took ${((call.latency_ms ?? call.ended_ms - call.started_ms) / 1000).toFixed(1)}s`,
     );
     row("tokens", `${call.input_tokens} in · ${call.output_tokens} out`);
     row("cost", `$${call.cost_usd.toFixed(4)}${call.cost_estimated ? " (est.)" : ""}`);

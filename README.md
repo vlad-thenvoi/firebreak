@@ -21,7 +21,7 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 - **Two local chat experiments:** `chat-mentions` delivers a message only to named agents; `chat-broadcast` delivers every room message to everyone. They use the same agents, model, prompts, world seed, and engine rules.
 - **OpenAI support:** `openai` uses the billed Responses API, while `codex` uses the local ChatGPT/Codex subscription through a headless App Server. Claude continues to use the local subscription by default through `claude-code`.
 - **Fair subscription execution:** Claude and Codex strip API-key variables. Codex reuses one process for efficiency but creates a fresh ephemeral thread for every decision, loads no user configuration, and disables Codex's own shell, apps, plugins, web search, and subagents.
-- **Comparable worlds:** every communication condition in a match uses the same scenario seed, scheduled events, and tile/tick random rolls. Only communication differs between teams. Perfect communication is a shared-information ceiling, not centralized planning, so independent agents may still duplicate work or make poor choices.
+- **Comparable worlds:** every communication condition in a match uses the same scenario seed, scheduled events, tile/tick random rolls, and synchronized decision barrier. Only communication differs between teams. Perfect communication is a shared-information ceiling, not centralized planning, so independent agents may still duplicate work or make poor choices.
 - **Replay broadcasts:** an omniscient post-match commentator explains the fire, rescue effort, and teamwork in plain language. Commentary is generated after gameplay, saved as a sidecar, and reused on future replay loads.
 - **Viewer explanations:** the replay includes a legend, rules reference, event markers, per-team positive/negative outcome counters, an outcome-over-time comparison chart, and a full-screen broadcast transcript reader.
 
@@ -40,7 +40,7 @@ Requires Node 22.13+ and pnpm. Subscription backends are the default path: `llm.
 ## Run a match
 
 ```bash
-# All four teams, 60 ticks × 5 s, with the live viewer at http://localhost:5173/?live
+# All four teams, 60 logical ticks × 5 simulated seconds, with the live viewer at http://localhost:5173/?live
 pnpm firebreak run --live
 
 # Pick teams, seed, provider and any config value
@@ -53,9 +53,14 @@ pnpm firebreak run --teams none,perfect,subagents --set subagents.max_lifetime_t
 # Generate an omniscient, human-friendly broadcast after play (one model call per team)
 pnpm firebreak run --commentary
 
-# Scripted bots, instant (no LLM)
-pnpm firebreak run --teams bots-none,bots-perfect --virtual
+# Legacy wall-clock play: the world advances every tick_ms even while models are responding
+pnpm firebreak run --realtime
+
+# Scripted bots are instant; --virtual remains a compatibility alias for synchronized mode
+pnpm firebreak run --teams bots-none,bots-perfect
 ```
+
+Synchronized ticks are the default. At each tick, agents observe the current state, all decisions and the message/report cascades they trigger finish, their latest orders are committed, and only then does the engine advance every world once. Ongoing orders then execute for one tick and remain active until completed, blocked, or replaced. Provider speed therefore affects wall-clock run time and recorded latency, but not how many simulated ticks an agent gets to react. `--realtime` selects the old mode where the engine advances every `tick_ms` regardless of unfinished calls; use it only for legacy behavior or an experiment explicitly about real-time latency.
 
 ## Working with recordings
 
@@ -72,7 +77,7 @@ pnpm firebreak commentate 20260927-184427-s13-mmr7.sqlite # generate/save broadc
 pnpm firebreak run --config-from 20260927-184427-s13-mmr7.sqlite --seed 14   # same setup, new seed
 ```
 
-Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team. Each responsive board separates mission outcomes (vertically paired as civilians saved/lost, fires out/active, and houses standing/destroyed) from operational diagnostics (cost, calls, messages, stale actions, idle agent-ticks, and uncovered intensity-3 fire-ticks); those sections use matching heights across all visible boards. In its own block below the cards, **Outcome over time** plots any outcome by tick and lets you toggle communication styles independently. The top-bar **View** dialog independently shows or hides mission stats, operational stats, team messages, AI commentary, and the comparison chart; these preferences persist across refreshes and recordings in the same browser. Each message strip has a **Read full** transcript with complete sender, recipients, tick, and untruncated body. Every board's **AI Broadcast** section explains the fire situation, communication, teamwork, and decision quality in plain language and identifies its saved commentator backend/model.
+Viewer keys: space play/pause, ←/→ step a tick, 1–5 speed (0.5×–10×), drag the timeline to seek, click an agent to see what it saw and decided, click a board's header to focus on that team. Each responsive board separates mission outcomes (vertically paired as civilians saved/lost, fires out/active, and houses standing/destroyed) from operational diagnostics (cost, calls, messages, stale actions, idle agent-ticks, and uncovered intensity-3 fire-ticks); those sections use matching heights across all visible boards. The event strip gives every visible communication scenario its own labelled row; shared wind and bridge events span all rows. In its own block below the cards, **Outcome over time** plots any outcome by tick and lets you toggle communication styles independently. The top-bar **View** dialog independently shows or hides mission stats, operational stats, team messages, AI commentary, and the comparison chart; these preferences persist across refreshes and recordings in the same browser. Each message strip has a **Read full** transcript with complete sender, recipients, tick, and untruncated body. The agent inspector explicitly shows a decision that is still in progress, distinguishing model latency from an agent choosing to idle. Every board's **AI Broadcast** section explains the fire situation, communication, teamwork, and decision quality in plain language and identifies its saved commentator backend/model.
 
 “Uncovered I3” counts every intensity-3 fire at every tick where fewer than two firefighters have active extinguish orders for that exact target. This measures whether the team has paired the required crew even while they are still travelling; lower is better. The **Sub-agents** button shows the lifecycle recorded for the replay and provides a UI control that generates the exact command for a task-driven or hard-limited next run. Sub-agent reports record assignment age; work lasting at least one quarter of the match (minimum eight ticks) is flagged `LONG-RUNNING` for diagnosis but is never stopped by that flag.
 
@@ -126,7 +131,7 @@ Agents can therefore prioritize actions to maximize the team score. They do **no
 
 The house term gives each world a positive starting score. For example, seed 42 has 11 houses, so a one-tick smoke test normally finishes at `11 × 5 = 55` before civilians can expire or houses can burn down. An aborted match may also show this initial snapshot. That does not make it comparable to a complete 60-tick match, where civilian losses can quickly make the total negative.
 
-Only compare recordings with the same seed, tick count and duration, engine version, prompt version, backend/model, and status. In particular, exclude aborted runs and do not compare one-tick backend smoke tests with full matches. Use `firebreak metrics` and the recorded `match_config` when in doubt.
+Only compare recordings with the same seed, tick count and duration, clock mode, engine version, prompt version, backend/model, and status. In particular, exclude aborted runs, do not mix legacy real-time recordings with synchronized ones, and do not compare one-tick backend smoke tests with full matches. Use `firebreak metrics` and the recorded `match_config` when in doubt.
 
 ## Many seeds
 

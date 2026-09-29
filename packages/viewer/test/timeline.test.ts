@@ -21,6 +21,46 @@ function fixture() {
 }
 
 describe("viewer outcome timeline", () => {
+  it("identifies in-flight decisions at the selected replay time", () => {
+    const { timeline } = fixture();
+    const world = timeline.worlds.get("w0-none")!;
+    timeline.add({
+      kind: "llm",
+      world_id: world.id,
+      id: "slow-call",
+      agent_id: "rescuer",
+      started_ms: 5_000,
+      ended_ms: 25_000,
+      input_tokens: 10,
+      output_tokens: 2,
+      cache_read_tokens: 0,
+      cost_usd: 0,
+      cost_estimated: true,
+      response: "",
+      tool_calls: [],
+    });
+
+    expect(timeline.inFlightLlmCall(world, "rescuer", 15_000)?.id).toBe("slow-call");
+    expect(timeline.inFlightLlmCall(world, "rescuer", 25_000)).toBeNull();
+    expect(timeline.lastLlmCall(world, "rescuer", 25_000)?.id).toBe("slow-call");
+  });
+
+  it("keeps each outcome marker associated with its communication world", () => {
+    const { timeline } = fixture();
+    timeline.add({
+      kind: "event",
+      world_id: "w0-none",
+      tick: 3,
+      t_ms: 15_000,
+      type: "civilian_lost",
+      payload: { id: "c1" },
+    });
+
+    expect(timeline.markers()).toEqual([
+      { t: 15_000, type: "civilian_lost", world_id: "w0-none", global: false },
+    ]);
+  });
+
   it("ends completed replays at the final simulation tick, not the LLM drain timestamp", () => {
     const { scenario, timeline, addTick } = fixture();
     addTick(0, structuredClone(scenario.initial));

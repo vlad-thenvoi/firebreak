@@ -28,7 +28,7 @@ Several teams play the same game on identical copies of the same world, at the s
 | **World** | One team's copy of the game map and state |
 | **Team** | 5 agents that share one communication method |
 | **Agent** | An LLM-driven player with one role and one body in the world |
-| **Tick** | One step of the world clock (default 5 s). The world advances every tick whether agents acted or not |
+| **Tick** | One deterministic world step (default 5 simulated seconds). In the default synchronized mode, all decisions and communication cascades for the current state settle before it advances |
 | **Seed** | Determines the map, every scheduled event, and every random roll |
 | **Order** | An agent's current standing action (e.g. "move to (4,7)"), executed by the engine tick after tick until it completes or is blocked |
 | **Recording** | The stored log of a match, which is enough to replay it fully |
@@ -71,7 +71,7 @@ Agents issue **orders**, not single steps. The engine carries out the order each
 
 - Orders that act on a target (`extinguish`, `refill`, `clear_debris`, `build_firebreak`, `rescue`) first move the agent next to the target (8-neighbour), then act.
 - A `move_to` onto a tile the agent cannot stand on (water, a house, off-road for the rescuer) is redirected to the nearest tile it can stand on, and the tool result says so. Models misread grid coordinates often; rejecting those orders cost a retry turn each time.
-- An order that arrives before a tick boundary takes effect on that tick. A new order replaces the current one.
+- In synchronized mode, every accepted order from the current decision barrier takes effect on the next engine step. In legacy real-time mode, an order must arrive before the wall-clock boundary. A new order replaces the current one.
 - A blocked order carries a reason and a human-readable detail, e.g. `no_path: debris at (17,6) blocks the way; the engineer can clear it`.
 
 ### 4.4 World dynamics (applied each tick, in this order)
@@ -132,7 +132,7 @@ Every agent gets a compact JSON observation whenever it is woken (see 6.2):
 - **Same model, same settings** (model id, supported sampling/reasoning effort, max tokens) for every LLM call in the match, orchestrator included.
 - **Same base prompt** for every agent. Only a short section describing the communication tools differs between teams (section 7).
 - **Same context budget.** Each agent's prompt holds its role, its latest observation, its last 30 messages, and a short log of its own recent orders. Every team gets the same limits.
-- **Recorded model latency.** Every LLM call's latency is recorded, so a slow-API streak can be spotted and a match discarded.
+- **Recorded model latency.** Every LLM call's actual wall latency is recorded separately from logical replay time. In synchronized mode it affects run time, not the number of world steps available to react; in legacy real-time mode it can affect outcomes.
 
 ## 6. Agent runtime
 
@@ -148,6 +148,16 @@ loop until match ends:
 
 At most one LLM call per agent is in flight. Triggers that arrive during a call are merged and handled by the next call.
 
+The default clock is **synchronized**. For each logical tick the runtime:
+
+1. presents the current state to every agent with a wake trigger;
+2. waits for every in-flight decision, transport delivery, sub-agent report, orchestrator response, and newly triggered follow-up decision to settle;
+3. commits the latest accepted order for each body;
+4. advances every world exactly one deterministic engine step; and
+5. emits the new observations and wake triggers.
+
+An active order continues one engine step at a time without requiring another model call. The `--realtime` option preserves the legacy clock: the engine advances every `tick_ms` of wall time even when a model call or delivery is still in flight. `--virtual` is a compatibility alias for synchronized mode.
+
 ### 6.2 Wake triggers
 
 - A message was delivered to this agent.
@@ -156,7 +166,7 @@ At most one LLM call per agent is in flight. Triggers that arrive during a call 
 - The wind changed (or, for the scout, a new forecast arrived).
 - Heartbeat: 3 ticks passed with no other trigger.
 
-At most 3 decisions per agent per tick. At real model latency (~4 s per decision) this never triggers; it prevents runaway loops such as message ping-pong in virtual time.
+At most 3 decisions per agent per tick. This bounds same-tick message ping-pong while still allowing ordinary send/deliver/respond cascades to settle before the synchronized barrier closes.
 
 ### 6.3 LLM backends
 
@@ -183,7 +193,7 @@ The `codex` backend applies the same fairness boundary:
 - Firebreak's `subagents` condition is unchanged: only its recorded orchestrator can spawn the simulator's ephemeral worker bodies. Codex cannot spawn its own hidden subagents.
 
 - **One backend per match.** All teams in a match use the same backend, so the comparison stays fair. The backend is recorded with the match (§8.2).
-- **Compare within a backend.** Latency differs between backends, so reports compare matches from the same backend only (and the same `tick_ms`).
+- **Compare within a backend and clock mode.** Models differ in behavior, prompts/tokenization, and latency accounting, so formal reports keep the backend/model fixed. Never mix synchronized and legacy real-time recordings; real-time outcomes additionally depend on provider latency.
 - **Stateless calls in every backend.** Every decision is a fresh call with a freshly built prompt (§6.1). No backend-side session memory, so every backend sees exactly the recorded input.
 - **Cost:** `api` and `openai` calculate billed cost from token usage and the recorded model price. `claude-code` and `codex` record an *estimated API-equivalent cost* for comparison; subscription runs are not API-billed.
 - **Usage limits:** a match is about 1,200 model calls. Before a subscription match or batch starts, the runner warns that it may hit the plan's usage limits. If a limit is hit, the match is aborted and marked `aborted: usage_limit`, not scored.
@@ -287,7 +297,7 @@ Each match is stored in one SQLite file: `runs/<match-id>.sqlite`.
 | `tick_state` | world_id, tick, **full world state** (JSON), state hash |
 | `event` | id, world_id, t_ms (since match start), tick, type, agent_id, payload (JSON) |
 | `message` | id, world_id, from, to[] (or channel/room), text, sent_at, delivered_at per recipient, consumed_at per recipient |
-| `llm_call` | id, world_id, agent_id, started_at, ended_at, input/output tokens, cost, prompt, response, tool calls |
+| `llm_call` | id, world_id, agent_id, logical start/end, actual wall latency, input/output tokens, cost, prompt, response, tool calls |
 
 **The configuration is always stored with the recording**, so every match documents exactly how it was produced:
 
@@ -305,7 +315,8 @@ Event types: `order_issued`, `order_completed`, `order_blocked`, `wake`, `spawn`
 Why store the **full state every tick**: at 20×20 × 60 ticks × 6 worlds it takes a few MB at most. Seeking is then instant (load one snapshot), and old recordings keep working after engine rules change.
 
 ### 8.3 Timeline
-- Time in a recording is **continuous milliseconds** since the match started, not just ticks. Messages and LLM calls sit at their real timestamps between ticks.
+- In synchronized recordings, `t_ms` is **logical simulation time** (`tick × tick_ms`). Decisions and same-tick communication share that logical position; `llm_call.latency_ms` preserves actual provider/process wall time separately.
+- In legacy real-time recordings, `t_ms` is continuous wall-relative match time and messages and calls can sit between tick boundaries.
 - The player keeps a virtual clock `t = t0 + speed × real_elapsed`. At each frame it:
   - draws world state at `floor(t / tick_ms)`, with agent positions interpolated toward the next tick,
   - shows every message and event with `t_ms ≤ t` (message lines animate at their `sent_at`/`delivered_at`).
@@ -314,7 +325,7 @@ Why store the **full state every tick**: at 20×20 × 60 ticks × 6 worlds it ta
 ### 8.4 Live and replay use the same code
 The viewer only ever consumes an **event stream**. Live mode is a websocket that tails the match as it's written. Replay mode reads the recording and releases events on the virtual clock. Same renderer, same panels.
 
-A completed replay ends at its final simulation tick. Draining an LLM call that was already in flight may delay the recording's wall-clock end frame, but that cleanup time cannot change the world and does not extend the replay scrubber. The runner does not wake agents after applying the last playable tick and rejects orders arriving after play has closed.
+A completed replay ends at its final simulation tick. The runner does not wake agents after applying the last playable tick and rejects orders arriving after play has closed. In legacy real-time mode, draining a call already in flight may delay file closure, but that cleanup cannot change the world or extend the replay scrubber.
 
 ### 8.5 Verification
 `firebreak verify <match>` re-runs the engine from the seed and the recorded orders (their arrival ticks) and compares the state hash on every tick. This catches engine non-determinism and proves the recording is complete. LLMs are never re-run.
@@ -329,7 +340,7 @@ A completed replay ends at its final simulation tick. Draining an LLM call that 
 - **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms). Every card also provides a full, untruncated message transcript through its **Read full** control.
 - **Counters** under each board: score, $ spent, messages, stale actions, idle ticks, uncovered intensity-3 fire-ticks.
 - **Inspector:** click an agent to see its latest observation, its prompt's message window, and its last LLM response.
-- **Controls:** play/pause, speed (0.5–10×), timeline scrubber with event markers, step ±1 tick, choose which teams are shown, and persistent visibility switches for mission stats, operational stats, messages, AI commentary, and the comparison chart.
+- **Controls:** play/pause, speed (0.5–10×), timeline scrubber with one labelled event row per visible team (global wind/bridge events span all rows), step ±1 tick, choose which teams are shown, and persistent visibility switches for mission stats, operational stats, messages, AI commentary, and the comparison chart. The agent inspector distinguishes the last completed decision from a model call that is still in flight, so provider latency is not mistaken for deliberate idling.
 - Stack: Vite + TypeScript + Canvas 2D (six 20×20 boards are far below what needs WebGL). The build is one self-contained `index.html`, which the server serves and `export` embeds a recording into.
 - URL parameters: `?rec=<file>`, `?live`, `?t=<seconds>`, `?paused`, `?speed=<n>`.
 
@@ -364,6 +375,7 @@ Every metric is a SQL query over the recording.
 seed: 42
 ticks: 60
 tick_ms: 5000
+clock: { mode: synchronized }  # default; use realtime only for the legacy wall-clock experiment
 teams: [none, perfect, chat-mentions, chat-broadcast]
 llm:
   backend: claude-code          # subscription: claude-code | codex; billed API: api | openai

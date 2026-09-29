@@ -31,7 +31,7 @@ export interface MatchOptions {
   /** Called after the header is written, so sinks can record extra sections. */
   onConfigSection?(section: string, value: unknown): void;
   llm: LlmClient | null;
-  /** Virtual time: ticks advance as soon as every team is idle. For scripted bots and tests. */
+  /** @deprecated Compatibility override. Prefer config.clock.mode. */
   virtualTime?: boolean;
   log?(line: string): void;
 }
@@ -62,11 +62,13 @@ export class MatchRunner {
   private abortReason: string | null = null;
   private worlds: World[] = [];
   private acceptingOrders = true;
+  private readonly synchronizedTicks: boolean;
   readonly budget: Budget;
 
   constructor(private o: MatchOptions) {
     this.scenario = createScenario(o.config.seed, toGameConfig(o.config));
-    this.clock = o.virtualTime ? new VirtualClock() : new RealClock();
+    this.synchronizedTicks = o.virtualTime ?? o.config.clock.mode === "synchronized";
+    this.clock = this.synchronizedTicks ? new VirtualClock() : new RealClock();
     this.budget = new Budget(o.config.budget.usd, o.config.budget.tokens, (r) => this.abort(r));
   }
 
@@ -191,7 +193,7 @@ export class MatchRunner {
     this.o.onConfigSection?.("prompts", prompts);
     this.o.onConfigSection?.("tools", tools);
 
-    this.clock = this.o.virtualTime ? new VirtualClock() : new RealClock();
+    this.clock = this.synchronizedTicks ? new VirtualClock() : new RealClock();
     for (const w of this.worlds) {
       this.emit({ kind: "tick", world_id: w.id, tick: 0, t_ms: 0, state: w.state, hash: stateHash(w.state) });
     }
@@ -199,10 +201,10 @@ export class MatchRunner {
 
     const tickMs = cfg.tick_ms;
     for (let tick = 1; tick <= cfg.ticks && !this.ac.signal.aborted; tick++) {
-      if (this.o.virtualTime) await Promise.all(this.worlds.map((w) => w.controller.idle()));
+      if (this.synchronizedTicks) await this.waitForDecisionBarrier();
       await this.clock.until(tick * tickMs, this.ac.signal);
       if (this.ac.signal.aborted) break;
-      const t_ms = this.o.virtualTime ? tick * tickMs : this.clock.now();
+      const t_ms = this.synchronizedTicks ? tick * tickMs : this.clock.now();
       const stepped: [World, WorldEvent[]][] = [];
       for (const w of this.worlds) {
         if (w.state.ended) continue;
@@ -269,5 +271,13 @@ export class MatchRunner {
     };
     this.emit(end);
     return { status: end.status, ...(end.reason ? { reason: end.reason } : {}), results };
+  }
+
+  /**
+   * A synchronized tick closes only after every decision and any message/report work it
+   * triggered has settled. Controllers own the transport-specific cascade draining.
+   */
+  private async waitForDecisionBarrier(): Promise<void> {
+    await Promise.all(this.worlds.map((w) => w.controller.idle()));
   }
 }

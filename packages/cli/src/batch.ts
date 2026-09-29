@@ -19,13 +19,13 @@ export async function runBatch(
   const gameplayCalls = Math.round(bodies * c.ticks * CALLS_PER_AGENT_TICK * a.seeds);
   const commentaryCalls = c.commentator.enabled ? c.teams.length * a.seeds : 0;
   const calls = gameplayCalls + commentaryCalls;
-  const minutes = ((c.ticks * c.tick_ms) / 60000) * a.seeds;
+  const simulatedMinutes = ((c.ticks * c.tick_ms) / 60000) * a.seeds;
   console.log(
     `batch: ${a.seeds} matches (seeds ${a.firstSeed}..${a.firstSeed + a.seeds - 1}), teams ${c.teams.join(", ")}`,
   );
   if (llmTeams.length || commentaryCalls) {
     console.log(
-      `estimate: ~${gameplayCalls} gameplay calls${commentaryCalls ? ` + ${commentaryCalls} post-match commentary calls` : ""}, ~$${(calls * USD_PER_CALL).toFixed(2)}, ~${Math.ceil(minutes)} min gameplay`,
+      `estimate: ~${gameplayCalls} gameplay calls${commentaryCalls ? ` + ${commentaryCalls} post-match commentary calls` : ""}, ~$${(calls * USD_PER_CALL).toFixed(2)}, ${Math.ceil(simulatedMinutes)} simulated min; wall time depends on model latency`,
     );
     if (
       c.llm.backend === "claude-code" ||
@@ -58,7 +58,6 @@ export async function runBatch(
     const rc = loadResolvedConfig({ ...a, seed });
     console.log(`\n[${i + 1}/${a.seeds}] seed ${seed}`);
     const { file, result } = await runMatch(rc, {
-      virtual: a.virtual,
       cliArgs: [...a.cliArgs, `--seed=${seed}`],
     });
     files.push(file);

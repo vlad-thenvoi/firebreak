@@ -85,7 +85,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 - Adjust spread rate, tick length, vision radius, civilian deadlines, and joint-fire frequency until:
   - `perfect` clearly beats `none` (target: ≥ 40% higher mean score),
   - neither team hits the score floor or ceiling on most seeds,
-  - LLM latency (p90) fits comfortably inside a tick.
+  - synchronized decisions finish reliably; provider latency is recorded separately and wall time remains practical.
 - Record the chosen defaults in `configs/default.yaml` and note the reasoning in `docs/TUNING.md`.
 
 **Done when:** the target gap holds on a fresh set of 10 seeds. **If the gap can't be reached, stop and redesign the rules before building real teams.**
@@ -146,7 +146,7 @@ About 5 agents × 4 LLM teams × ~60 decisions ≈ 1,200 calls, plus the orchest
 | Risk | Mitigation |
 |---|---|
 | The game doesn't reward communication | M5 gate: tune with reference teams before building real teams |
-| LLM latency varies between teams | Same model; latency recorded per call; discard outlier matches; many seeds |
+| LLM latency varies between teams | Synchronized mode removes it from simulated reaction time; record it for wall-time diagnosis. Keep `--realtime` results separate |
 | Rate limits (Band, Slack, Linear, Anthropic) distort results | Log every rate-limit event; report them per team; use sandbox workspaces |
 | A setup looks rigged | Faithful setups (§7), generous choices where unsure, open-source harness (§14.6) |
 | Sub-agents win in easy configurations | Expected; show where the crossover is (score vs. spread rate / team size) |

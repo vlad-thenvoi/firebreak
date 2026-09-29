@@ -77,6 +77,8 @@ export interface LlmFrame {
   agent_id: string;
   started_ms: number;
   ended_ms: number;
+  /** Actual provider/process wall time. Logical timestamps can be equal in synchronized mode. */
+  latency_ms?: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;

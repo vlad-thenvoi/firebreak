@@ -112,6 +112,8 @@ export class SubagentTeam implements TeamController {
   private world!: WorldHandle;
   private log!: MessageLog;
   private live = new Map<string, Live>();
+  /** Finished workers whose final model call is still unwinding and being recorded. */
+  private retiring = new Set<LlmAgent>();
   private reports: Report[] = [];
   private unread = 0;
   private reasons = new Set<string>(["match started: all bodies are idle at the fire station"]);
@@ -205,6 +207,8 @@ export class SubagentTeam implements TeamController {
     l.finished = true;
     l.agent.stop();
     this.live.delete(l.body);
+    this.retiring.add(l.agent);
+    void l.agent.idle().finally(() => this.retiring.delete(l.agent));
     const ageTicks = Math.max(0, this.state.tick - l.spawned);
     const longThreshold = longAssignmentThreshold(this.world.config.ticks);
     const longRunning = ageTicks >= longThreshold;
@@ -364,6 +368,7 @@ export class SubagentTeam implements TeamController {
       payload: { reasons },
     });
     const started = w.now();
+    const wallStarted = performance.now();
     const decisionSystem = `${this.orchestratorSystem}\n\nCURRENT MATCH TIME: tick ${s.tick} of ${w.config.ticks}; ${w.config.ticks - s.tick} ticks remain. Assign only work that can matter within that time.`;
     const res = await w.llm!.decide({
       system: decisionSystem,
@@ -385,6 +390,7 @@ export class SubagentTeam implements TeamController {
       agent_id: ORCHESTRATOR,
       started_ms: started,
       ended_ms: w.now(),
+      latency_ms: performance.now() - wallStarted,
       input_tokens: res.input_tokens,
       output_tokens: res.output_tokens,
       cache_read_tokens: res.cache_read_tokens,
@@ -399,13 +405,26 @@ export class SubagentTeam implements TeamController {
   }
 
   async idle(): Promise<void> {
-    while (this.busy) await this.busy;
-    await Promise.all([...this.live.values()].map((l) => l.agent.idle()));
+    for (;;) {
+      while (this.busy) await this.busy;
+      await Promise.all([
+        ...[...this.live.values()].map((l) => l.agent.idle()),
+        ...[...this.retiring].map((agent) => agent.idle()),
+      ]);
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      if (
+        !this.busy &&
+        [...this.live.values()].every((l) => l.agent.isIdle()) &&
+        [...this.retiring].every((agent) => agent.isIdle())
+      )
+        return;
+    }
   }
 
   async teardown(): Promise<void> {
     this.stopped = true;
     for (const l of this.live.values()) l.agent.stop();
+    for (const agent of this.retiring) agent.stop();
   }
 
   describe() {

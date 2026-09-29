@@ -23,6 +23,9 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 
 ### Changed
 
+- Made synchronized logical ticks the default: every agent decision and message/report cascade settles before all worlds advance one engine step. Added `--realtime` for the legacy wall-clock behavior and kept `--virtual` as a compatibility alias.
+- Separated logical replay timestamps from actual model latency in schema v2, so synchronized runs remain tick-aligned while the inspector still reports provider/process wall time.
+- Updated shared prompt v7 to describe discrete persistent-order ticks without falsely claiming that the world always advances while a model is responding.
 - Reworked broadcast text into connected, human-readable incident commentary without coordinates, internal IDs, tick numbers, or simulation jargon.
 - Moved replay commentary loading into the background so refreshing a replay does not repeatedly block on generation.
 - Made local Claude/Haiku the default replay commentator, independently of the gameplay model.
@@ -38,6 +41,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Increased the configurable default civilian survival window from 15 to 17 ticks and bumped the engine version to 0.3.0.
 - Documented the distinction between oracle-style perfect information, local room broadcast, and mention-delivered real Band rooms.
 - Fixed completed replay scrubbers extending past the final tick while in-flight model calls drained, and stopped agents from starting or submitting work after the last playable tick.
+- Split replay outcome markers into labelled communication-scenario rows and made the inspector show in-flight model decisions instead of presenting an old completed decision as current.
 
 ### Fairness and security
 

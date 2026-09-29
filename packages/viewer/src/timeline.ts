@@ -264,6 +264,10 @@ export class Timeline {
     return null;
   }
 
+  inFlightLlmCall(w: WorldTimeline, agent: string, t: number): LlmFrame | null {
+    return w.llm.find((call) => call.agent_id === agent && call.started_ms <= t && call.ended_ms > t) ?? null;
+  }
+
   commentaryAt(w: WorldTimeline, t: number): CommentarySegment | null {
     let best: CommentarySegment | null = null;
     for (const call of w.commentary) {
@@ -283,8 +287,8 @@ export class Timeline {
       .sort((a, b) => b.t_ms - a.t_ms);
   }
 
-  /** Markers for the scrubber: notable events across all worlds. */
-  markers(): { t: number; type: string }[] {
+  /** Markers retain their world so the shared scrubber can give each team its own row. */
+  markers(): { t: number; type: string; world_id: string; global: boolean }[] {
     const notable = new Set([
       "civilian_lost",
       "civilian_evacuated",
@@ -292,7 +296,7 @@ export class Timeline {
       "wind_changed",
       "bridge_collapsed",
     ]);
-    const out: { t: number; type: string }[] = [];
+    const out: { t: number; type: string; world_id: string; global: boolean }[] = [];
     const seenGlobal = new Set<string>();
     for (const w of this.worlds.values()) {
       for (const e of w.events) {
@@ -301,7 +305,7 @@ export class Timeline {
         const k = `${e.type}@${e.tick}`;
         if (global && seenGlobal.has(k)) continue;
         seenGlobal.add(k);
-        out.push({ t: e.t_ms, type: e.type });
+        out.push({ t: e.t_ms, type: e.type, world_id: w.id, global });
       }
     }
     return out;
