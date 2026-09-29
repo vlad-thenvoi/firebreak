@@ -10,6 +10,7 @@ type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 /** OpenAI Responses API backend with stateless decisions and local function execution. */
 export class OpenAiResponsesClient implements LlmClient {
   readonly backend = "openai" as const;
+  readonly retainsSessionContext = false;
   private client: OpenAI;
 
   constructor(

@@ -14,6 +14,8 @@ export interface ToolResult {
 }
 
 export interface DecideRequest {
+  /** Stable logical conversation. Headless backends retain this session across decisions. */
+  session_id: string;
   system: string;
   user: string;
   tools: ToolDef[];
@@ -39,6 +41,8 @@ export interface DecideResult {
 export interface LlmClient {
   readonly backend: "api" | "claude-code" | "openai" | "codex";
   readonly model: string;
+  /** Whether later decisions in one session inherit earlier prompts and responses. */
+  readonly retainsSessionContext: boolean;
   decide(req: DecideRequest): Promise<DecideResult>;
   close?(): Promise<void>;
 }

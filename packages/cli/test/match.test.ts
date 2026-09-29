@@ -37,6 +37,7 @@ const tmp = () => mkdtempSync(join(tmpdir(), "firebreak-test-"));
 class FakeLlm implements LlmClient {
   readonly backend = "api" as const;
   readonly model = "fake";
+  readonly retainsSessionContext = false;
   calls = 0;
   systems: string[] = [];
 
@@ -225,7 +226,7 @@ describe("recording and replay", () => {
     expect(new Set(initialHashes)).toEqual(new Set([initialHashes[0]]));
     expect(b.frames.filter((f) => f.kind === "tick")).toHaveLength(62);
     expect(b.frames.at(-1)?.kind).toBe("end");
-    expect(b.header.config.prompt_version).toBe("7");
+    expect(b.header.config.prompt_version).toBe("8");
     const db = openRecording(file);
     const cfg = readConfig(db);
     db.close();
@@ -307,7 +308,7 @@ describe("LLM teams (fake model)", () => {
         .every((frame) => frame.kind === "llm" && frame.started_ms < 6 * 5_000),
     ).toBe(true);
     expect(frames.some((f) => f.kind === "event" && f.type === "order_issued")).toBe(true);
-    expect(llm.systems[0]).toContain("CURRENT MATCH TIME: tick");
+    expect(llm.systems[0]).toContain("MATCH CLOCK:");
     expect(llm.systems[0]).toContain("Every visible fire is reported with a numeric intensity");
     const msgs = frames.filter((f) => f.kind === "message");
     expect(msgs.length).toBeGreaterThanOrEqual(5); // every message wakes the others, who may send again (capped per tick)

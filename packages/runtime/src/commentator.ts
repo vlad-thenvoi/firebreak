@@ -173,6 +173,7 @@ export async function generateCommentary(
       const started = Date.now();
       const ac = new AbortController();
       const res = await llm.decide({
+        session_id: `${bundle.header.match_id}:${world_id}:commentary`,
         system: COMMENTATOR_SYSTEM,
         user: prompt,
         tools: [COMMENTATOR_TOOL],

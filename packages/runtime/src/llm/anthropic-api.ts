@@ -11,6 +11,7 @@ export function jsonSchema(t: ToolDef): Record<string, unknown> {
 /** `api` backend: Messages API with an API key (SPEC §6.3). */
 export class AnthropicApiClient implements LlmClient {
   readonly backend = "api" as const;
+  readonly retainsSessionContext = false;
   private client: Anthropic;
 
   constructor(

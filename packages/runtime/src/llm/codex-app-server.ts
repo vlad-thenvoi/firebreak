@@ -30,11 +30,26 @@ type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 interface DecisionContext {
   request: DecideRequest;
   result: DecideResult;
+  session: CodexSession;
+  latestUsage: UsageSnapshot | null;
   turnId: string | null;
   cacheWriteTokens: number;
   failedCalls: number;
   resolve(): void;
   reject(error: Error): void;
+}
+
+interface UsageSnapshot {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+interface CodexSession {
+  threadId: string;
+  signature: string;
+  usage: UsageSnapshot;
 }
 
 function subscriptionEnv(codexHome: string): NodeJS.ProcessEnv {
@@ -246,16 +261,17 @@ function fatalKind(message: string): DecideResult["fatal"] | undefined {
 /**
  * OpenAI Codex subscription backend.
  *
- * One App Server process is reused for transport efficiency, but every decision gets a new
- * ephemeral thread. This preserves the same stateless decision boundary as the API and
- * claude-code backends. Codex's own shell, apps, plugins, web search, and multi-agent tools are
- * disabled; only Firebreak's client-executed dynamic tools are supplied to the model.
+ * One App Server process is reused, with one isolated ephemeral thread per logical Firebreak
+ * agent. Later decisions append turns to that thread. Codex's own shell, apps, plugins, web
+ * search, and multi-agent tools are disabled; only Firebreak's dynamic tools are supplied.
  */
 export class CodexAppServerClient implements LlmClient {
   readonly backend = "codex" as const;
+  readonly retainsSessionContext = true;
   private connectionPromise: Promise<CodexAppServerConnection> | null = null;
   private unsubscribe: (() => void) | null = null;
   private decisions = new Map<string, DecisionContext>();
+  private sessions = new Map<string, Promise<CodexSession>>();
 
   constructor(
     readonly model: string,
@@ -280,6 +296,64 @@ export class CodexAppServerClient implements LlmClient {
     return this.connectionPromise;
   }
 
+  private sessionSignature(req: DecideRequest): string {
+    return JSON.stringify({
+      system: req.system,
+      tools: req.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: jsonSchema(tool),
+      })),
+    });
+  }
+
+  private async session(connection: CodexAppServerConnection, req: DecideRequest): Promise<CodexSession> {
+    const signature = this.sessionSignature(req);
+    let pending = this.sessions.get(req.session_id);
+    if (!pending) {
+      pending = connection
+        .request<{
+          thread: { id: string };
+          model: string;
+          instructionSources?: string[];
+        }>("thread/start", {
+          model: this.model,
+          cwd: tmpdir(),
+          approvalPolicy: "never",
+          sandbox: "read-only",
+          ephemeral: true,
+          serviceName: "firebreak",
+          baseInstructions: req.system,
+          developerInstructions: "",
+          dynamicTools: req.tools.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            inputSchema: jsonSchema(tool),
+          })),
+        })
+        .then((started) => {
+          if (started.model !== this.model)
+            throw new Error(`codex requested ${this.model} but App Server selected ${started.model}`);
+          if (started.instructionSources?.length)
+            throw new Error(
+              `codex loaded unexpected instruction files: ${started.instructionSources.join(", ")}`,
+            );
+          return {
+            threadId: started.thread.id,
+            signature,
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          };
+        });
+      this.sessions.set(req.session_id, pending);
+      pending.catch(() => this.sessions.delete(req.session_id));
+    }
+    const session = await pending;
+    if (session.signature !== signature)
+      throw new Error(`codex session '${req.session_id}' changed its system prompt or tools`);
+    return session;
+  }
+
   async decide(req: DecideRequest): Promise<DecideResult> {
     const result: DecideResult = {
       response: "",
@@ -296,33 +370,9 @@ export class CodexAppServerClient implements LlmClient {
     try {
       const connection = await this.connection();
       if (req.signal.aborted) return result;
-      const started = await connection.request<{
-        thread: { id: string };
-        model: string;
-        instructionSources?: string[];
-      }>("thread/start", {
-        model: this.model,
-        cwd: tmpdir(),
-        approvalPolicy: "never",
-        sandbox: "read-only",
-        ephemeral: true,
-        serviceName: "firebreak",
-        baseInstructions: req.system,
-        developerInstructions: "",
-        dynamicTools: req.tools.map((tool) => ({
-          type: "function",
-          name: tool.name,
-          description: tool.description,
-          inputSchema: jsonSchema(tool),
-        })),
-      });
-      if (started.model !== this.model)
-        throw new Error(`codex requested ${this.model} but App Server selected ${started.model}`);
-      if (started.instructionSources?.length)
-        throw new Error(
-          `codex loaded unexpected instruction files: ${started.instructionSources.join(", ")}`,
-        );
-      threadId = started.thread.id;
+      const session = await this.session(connection, req);
+      threadId = session.threadId;
+      if (this.decisions.has(threadId)) throw new Error(`codex session '${req.session_id}' is already busy`);
 
       let resolve!: () => void;
       let reject!: (error: Error) => void;
@@ -333,6 +383,8 @@ export class CodexAppServerClient implements LlmClient {
       context = {
         request: req,
         result,
+        session,
+        latestUsage: null,
         turnId: null,
         cacheWriteTokens: 0,
         failedCalls: 0,
@@ -366,6 +418,7 @@ export class CodexAppServerClient implements LlmClient {
     } finally {
       removeAbort?.();
       if (threadId) this.decisions.delete(threadId);
+      if (context?.latestUsage) context.session.usage = context.latestUsage;
       const c = costUsd(this.model, {
         input: Math.max(0, result.input_tokens - result.cache_read_tokens - (context?.cacheWriteTokens ?? 0)),
         output: result.output_tokens,
@@ -409,10 +462,17 @@ export class CodexAppServerClient implements LlmClient {
     } else if (message.method === "thread/tokenUsage/updated") {
       const usage = (message.params?.tokenUsage as JsonObject | undefined)?.total as JsonObject | undefined;
       if (usage) {
-        context.result.input_tokens = Number(usage.inputTokens ?? 0);
-        context.result.output_tokens = Number(usage.outputTokens ?? 0);
-        context.result.cache_read_tokens = Number(usage.cachedInputTokens ?? 0);
-        context.cacheWriteTokens = Number(usage.cacheWriteInputTokens ?? 0);
+        const current = {
+          input: Number(usage.inputTokens ?? 0),
+          output: Number(usage.outputTokens ?? 0),
+          cacheRead: Number(usage.cachedInputTokens ?? 0),
+          cacheWrite: Number(usage.cacheWriteInputTokens ?? 0),
+        };
+        context.latestUsage = current;
+        context.result.input_tokens = Math.max(0, current.input - context.session.usage.input);
+        context.result.output_tokens = Math.max(0, current.output - context.session.usage.output);
+        context.result.cache_read_tokens = Math.max(0, current.cacheRead - context.session.usage.cacheRead);
+        context.cacheWriteTokens = Math.max(0, current.cacheWrite - context.session.usage.cacheWrite);
       }
     } else if (message.method === "error") {
       const error = message.params?.error as { message?: string; codexErrorInfo?: unknown } | undefined;
@@ -466,6 +526,7 @@ export class CodexAppServerClient implements LlmClient {
     this.unsubscribe = null;
     for (const context of this.decisions.values()) context.reject(new Error("codex client closed"));
     this.decisions.clear();
+    this.sessions.clear();
     if (this.connectionPromise) {
       try {
         await (await this.connectionPromise).close();

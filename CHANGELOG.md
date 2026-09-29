@@ -23,6 +23,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 
 ### Changed
 
+- Replaced fresh-per-decision Claude/Codex calls with real per-agent subscription sessions. Claude resumes the same transcript and Codex appends turns to the same isolated App Server thread; spawned sub-agent workers receive a fresh session per assignment. Stateful prompts now send only new messages and order updates, and usage/cost accounting records per-turn values rather than cumulative session totals. Bumped the shared prompt version to v8.
 - Made synchronized logical ticks the default: every agent decision and message/report cascade settles before all worlds advance one engine step. Added `--realtime` for the legacy wall-clock behavior and kept `--virtual` as a compatibility alias.
 - Separated logical replay timestamps from actual model latency in schema v2, so synchronized runs remain tick-aligned while the inspector still reports provider/process wall time.
 - Updated shared prompt v7 to describe discrete persistent-order ticks without falsely claiming that the world always advances while a model is responding.
@@ -46,7 +47,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 ### Fairness and security
 
 - Every world inside a match shares one seed, scenario, event schedule, engine rules, and model configuration. Peer-agent communication teams also share the same base prompt and decision loop; the separately labelled sub-agent condition intentionally replaces the peer topology with its recorded orchestrator/worker lifecycle.
-- Codex uses one process per match for transport efficiency but a fresh ephemeral thread for every decision, matching the stateless decision boundary of the other backends.
+- Claude and Codex use one isolated provider conversation per logical game agent. Session identity and lifetime are the same across communication conditions; only the communication transport differs.
 - Codex user configuration, stored conversations, AGENTS files, MCP servers, skills, plugins, apps, shell tools, web search, and native subagents are excluded from Firebreak decisions.
 - The Codex backend verifies ChatGPT authentication and removes `OPENAI_API_KEY`, `CODEX_API_KEY`, and `CODEX_ACCESS_TOKEN` from its subprocess.
 - The Claude subscription backend removes `ANTHROPIC_API_KEY` from its subprocess.
@@ -54,7 +55,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 
 ### Verification
 
-- Added offline protocol tests for Codex dynamic game-tool calls, token accounting, ephemeral threads, and shutdown.
+- Added offline protocol tests for Codex dynamic game-tool calls, per-turn token accounting, persistent per-agent threads, and shutdown.
 - Verified one-tick subscription smoke recordings for both Codex/GPT-5.6-Luna and Claude/Haiku without API keys.
 - Verified the generated recordings by replaying their recorded orders through the deterministic engine.
 

@@ -18,6 +18,8 @@ export interface AgentOptions {
   world: WorldHandle;
   llm: LlmClient;
   system: string;
+  /** Defaults to the world/body pair; sub-agent assignments provide a fresh id per spawn. */
+  sessionId?: string;
   tools: ToolDef[];
   observe(state: WorldState): Observation;
   /** Tools that are not orders (transport, spawn, finish...). */
@@ -56,6 +58,7 @@ export class LlmAgent {
   private inbox: DeliveredMessage[] = [];
   private unread = 0;
   private orderLog: string[] = [];
+  private unsentOrderLog: string[] = [];
   decisions = 0;
   private decisionsThisTick = 0;
 
@@ -136,6 +139,7 @@ export class LlmAgent {
 
   private logOrder(line: string) {
     this.orderLog.push(line);
+    this.unsentOrderLog.push(line);
     const max = this.o.world.config.agent.order_log * 2;
     if (this.orderLog.length > max) this.orderLog.splice(0, this.orderLog.length - max);
   }
@@ -174,7 +178,9 @@ export class LlmAgent {
     this.decisions += 1;
 
     const window = w.config.agent.message_window;
-    const msgs = this.inbox.slice(-window);
+    const msgs = this.o.llm.retainsSessionContext
+      ? this.inbox.slice(Math.max(0, this.inbox.length - this.unread))
+      : this.inbox.slice(-window);
     const newCount = Math.min(this.unread, msgs.length);
     for (const m of msgs.slice(msgs.length - newCount)) this.o.log?.consumed(m.id, this.id);
     this.unread = 0;
@@ -187,12 +193,15 @@ export class LlmAgent {
       addressed: m.addressed,
     }));
     const extra = this.o.extraPrompt?.();
+    const orderLog = this.o.llm.retainsSessionContext
+      ? this.unsentOrderLog.splice(0)
+      : this.orderLog.slice(-w.config.agent.order_log);
     const user = userPrompt({
       obs,
       reasons,
       messages: promptMsgs,
       newMessageCount: newCount,
-      orderLog: this.orderLog.slice(-w.config.agent.order_log),
+      orderLog,
       ...(extra ? { extra } : {}),
     });
 
@@ -207,8 +216,9 @@ export class LlmAgent {
     const started = w.now();
     const wallStarted = performance.now();
     const id = `${w.worldId}-${this.id}-c${++callSeq}`;
-    const decisionSystem = `${this.o.system}\n\nCURRENT MATCH TIME: tick ${obs.tick} of ${this.o.world.config.ticks}; ${obs.ticks_left} ticks remain. Plan only work that can matter within that time.`;
+    const decisionSystem = this.o.system;
     const res = await this.o.llm.decide({
+      session_id: this.o.sessionId ?? `${w.worldId}:${this.id}`,
       system: decisionSystem,
       user,
       tools: this.o.tools,

@@ -61,7 +61,7 @@ These are the point of the project (SPEC §2, §5). Breaking them makes results 
 ## Running matches
 
 - LLM teams run on the Claude subscription by default (`llm.backend: claude-code`, local `claude` login). Ticks are synchronized by default: all triggered decisions and message/report cascades settle before the next engine step, so wall time depends on model latency rather than `ticks × tick_ms`. A four-team, 60-tick match is ~650–850 decisions. Batches can exhaust the subscription's usage window; the runner then aborts with `usage_limit` and the batch stops. Ask before starting batches.
-- `--set llm.backend=codex` uses the local ChatGPT-authenticated `codex` login. It reuses one App Server process but creates a fresh ephemeral thread per decision; it cannot use Codex subagents or inherit user configuration.
+- `--set llm.backend=codex` uses the local ChatGPT-authenticated `codex` login. It reuses one App Server process and one isolated thread per logical game agent; spawned Firebreak workers get a new thread per assignment. It cannot use Codex subagents or inherit user configuration.
 - `--set llm.backend=api` uses `ANTHROPIC_API_KEY` instead (billed).
 - `--set llm.backend=openai` uses `OPENAI_API_KEY` instead (billed).
 - Use scripted bots for anything that doesn't need a model: `pnpm firebreak run --teams bots-none,bots-perfect`. `--realtime` opts into the legacy wall-clock engine; `--virtual` remains a synchronized-mode compatibility alias.

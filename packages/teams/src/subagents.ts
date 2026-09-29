@@ -270,6 +270,7 @@ export class SubagentTeam implements TeamController {
         role: a.role,
         world,
         llm: world.llm!,
+        sessionId: `${world.worldId}:${body}:assignment:${id}`,
         system: this.subSystems[body]!,
         tools: [
           ...orderToolsFor(a.role),
@@ -335,7 +336,9 @@ export class SubagentTeam implements TeamController {
     const s = this.state;
     this.lastDecisionTick = s.tick;
     const window = w.config.agent.message_window;
-    const recent = this.reports.slice(-window);
+    const recent = w.llm!.retainsSessionContext
+      ? this.reports.slice(Math.max(0, this.reports.length - this.unread))
+      : this.reports.slice(-window);
     const newCount = Math.min(this.unread, recent.length);
     for (const r of recent.slice(recent.length - newCount)) this.log.consumed(r.id, ORCHESTRATOR);
     this.unread = 0;
@@ -369,8 +372,9 @@ export class SubagentTeam implements TeamController {
     });
     const started = w.now();
     const wallStarted = performance.now();
-    const decisionSystem = `${this.orchestratorSystem}\n\nCURRENT MATCH TIME: tick ${s.tick} of ${w.config.ticks}; ${w.config.ticks - s.tick} ticks remain. Assign only work that can matter within that time.`;
+    const decisionSystem = this.orchestratorSystem;
     const res = await w.llm!.decide({
+      session_id: `${w.worldId}:${ORCHESTRATOR}`,
       system: decisionSystem,
       user,
       tools: this.orchestratorTools,

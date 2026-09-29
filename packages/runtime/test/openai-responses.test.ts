@@ -36,6 +36,7 @@ describe("OpenAiResponsesClient", () => {
     );
     const execute = vi.fn().mockResolvedValue({ text: "accepted", isError: false });
     const req: DecideRequest = {
+      session_id: "test:agent",
       system: "system",
       user: "user",
       tools: [{ name: "move_to", description: "move", schema: { x: z.number(), y: z.number() } }],
@@ -93,6 +94,7 @@ describe("OpenAiResponsesClient", () => {
     const execute = vi.fn().mockResolvedValue({ text: "off map", isError: true });
 
     const result = await client.decide({
+      session_id: "test:agent",
       system: "system",
       user: "user",
       tools: [{ name: "move_to", description: "move", schema: { x: z.number(), y: z.number() } }],
