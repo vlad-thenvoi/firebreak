@@ -14,7 +14,7 @@ Teams of 5 AI firefighters defend identical copies of a town from spreading wild
 | `subagents`                 | Orchestrator delegates bounded tasks with explicit completion criteria to isolated workers         |
 | `bots-none`, `bots-perfect` | Scripted bots, no LLM (for development and tuning)                                                 |
 
-- [Specification](docs/SPEC.md) · [Implementation plan](docs/PLAN.md) · [Tuning notes](docs/TUNING.md) · [Changelog](CHANGELOG.md) · [Guide for coding agents](AGENTS.md)
+- [Specification](docs/SPEC.md) · [Implementation plan](docs/PLAN.md) · [Tuning notes](docs/TUNING.md) · [Prompt-v8 benchmark](docs/PROMPT_V8_BENCHMARK.md) · [Changelog](CHANGELOG.md) · [Guide for coding agents](AGENTS.md)
 
 ## Recent additions
 

@@ -188,6 +188,8 @@ This changes both context and token behavior, so prompt-v8 results are not compa
 
 ## 12. Prompt-v8 persistent-session comparison
 
+The complete benchmark report, including every per-run outcome and the mean/median tables for scores, rescues, losses, houses, fires, calls, and messages, is in [PROMPT_V8_BENCHMARK.md](PROMPT_V8_BENCHMARK.md).
+
 Eight completed 60-tick matches used seed 42, synchronized ticks, prompt v8, engine 0.3.0, low reasoning effort, task-lived sub-agents, and all five communication conditions. Each model ran twice: Claude Opus 5.5, GPT-5.6 Sol, Claude Sonnet 4.5, and GPT-5.6 Luna. Reusing seed 42 holds the wildfire world fixed and measures model sampling variance; it does not measure generalization across maps. Every recording replay-verified, and each has five saved commentary tracks.
 
 | Model/run | Recording | None | Perfect | Sub-agents | Mentions | Broadcast | Winner |
