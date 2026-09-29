@@ -44,6 +44,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Documented the distinction between oracle-style perfect information, local room broadcast, and mention-delivered real Band rooms.
 - Fixed completed replay scrubbers extending past the final tick while in-flight model calls drained, and stopped agents from starting or submitting work after the last playable tick.
 - Split replay outcome markers into labelled communication-scenario rows and made the inspector show in-flight model decisions instead of presenting an old completed decision as current.
+- Fixed the civilian deadline symbol in the legend to use the same circular ring shape as the map overlay.
 
 ### Fairness and security
 
