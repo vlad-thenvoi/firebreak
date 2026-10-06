@@ -533,6 +533,36 @@ a {
   justify-content: space-between;
   gap: 16px;
 }
+.outcome-chart-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.chart-collapse {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.chart-collapse:hover {
+  border-color: var(--muted);
+}
+.collapse-comparison-chart .outcome-chart {
+  padding-bottom: 12px;
+}
+.collapse-comparison-chart .outcome-chart-heading {
+  align-items: center;
+}
+.collapse-comparison-chart .outcome-chart-heading p,
+.collapse-comparison-chart .chart-metrics,
+.collapse-comparison-chart .chart-teams,
+.collapse-comparison-chart .chart-plot,
+.collapse-comparison-chart .chart-values {
+  display: none;
+}
 .outcome-chart h2 {
   margin: 0;
   font-size: 17px;
@@ -622,6 +652,10 @@ a {
 @media (max-width: 760px) {
   .outcome-chart-heading {
     flex-direction: column;
+  }
+  .outcome-chart-actions {
+    width: 100%;
+    justify-content: space-between;
   }
   .chart-values {
     padding-left: 0;

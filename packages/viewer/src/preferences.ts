@@ -4,6 +4,7 @@ export interface ViewPreferences {
   messages: boolean;
   commentary: boolean;
   comparisonChart: boolean;
+  comparisonChartCollapsed: boolean;
 }
 
 export const VIEW_PREFERENCES_KEY = "firebreak.viewer.preferences.v1";
@@ -14,6 +15,7 @@ export const DEFAULT_VIEW_PREFERENCES: ViewPreferences = {
   messages: true,
   commentary: true,
   comparisonChart: true,
+  comparisonChartCollapsed: false,
 };
 
 /** Ignores malformed/old fields so adding a preference never breaks saved viewer state. */

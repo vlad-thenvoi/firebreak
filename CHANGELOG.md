@@ -22,6 +22,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Added recorded sub-agent assignment ages and a diagnostic long-running flag that never kills or interrupts the worker.
 - Added a standalone prompt-v8 benchmark report with exact outcomes from all eight persistent-session matches, complete mean/median tables, model-specific results, and conclusions.
 - Added a persisted Dark/Light viewer theme toggle across the recording index, replay, dialogs, charts, and rules reference.
+- Added a persistent collapse/expand control to the outcome comparison chart.
 
 ### Changed
 
@@ -46,6 +47,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Fixed completed replay scrubbers extending past the final tick while in-flight model calls drained, and stopped agents from starting or submitting work after the last playable tick.
 - Split replay outcome markers into labelled communication-scenario rows and made the inspector show in-flight model decisions instead of presenting an old completed decision as current.
 - Fixed the civilian deadline symbol in the legend to use the same circular ring shape as the map overlay.
+- Increased the map size when a single team is visible so laptop replays use the available width instead of leaving a small centered board.
 
 ### Fairness and security
 

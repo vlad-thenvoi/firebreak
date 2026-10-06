@@ -492,9 +492,15 @@ export class Player {
         messages: true,
         commentary: true,
         comparisonChart: true,
+        comparisonChartCollapsed: false,
       };
       for (const input of Array.from(options.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')))
         input.checked = true;
+      const chartCollapse = this.contentEl.querySelector<HTMLButtonElement>(".chart-collapse");
+      if (chartCollapse) {
+        chartCollapse.textContent = "Collapse";
+        chartCollapse.setAttribute("aria-expanded", "true");
+      }
       this.applyViewPreferences();
     });
     dialog.append(
@@ -518,6 +524,7 @@ export class Player {
     this.shell.classList.toggle("hide-messages", !p.messages);
     this.shell.classList.toggle("hide-commentary", !p.commentary);
     this.shell.classList.toggle("hide-comparison-chart", !p.comparisonChart);
+    this.shell.classList.toggle("collapse-comparison-chart", p.comparisonChartCollapsed);
     if (persist) saveViewPreferences(p);
     requestAnimationFrame(() => this.layout());
   }
@@ -618,7 +625,22 @@ export class Player {
       this.chartMetricButtons.set(key, button);
       metricControls.append(button);
     }
-    heading.append(title, metricControls);
+    const chartActions = el("div", "outcome-chart-actions");
+    const collapse = el(
+      "button",
+      "chart-collapse",
+      this.viewPreferences.comparisonChartCollapsed ? "Expand" : "Collapse",
+    );
+    collapse.type = "button";
+    collapse.setAttribute("aria-expanded", String(!this.viewPreferences.comparisonChartCollapsed));
+    collapse.addEventListener("click", () => {
+      this.viewPreferences.comparisonChartCollapsed = !this.viewPreferences.comparisonChartCollapsed;
+      collapse.textContent = this.viewPreferences.comparisonChartCollapsed ? "Expand" : "Collapse";
+      collapse.setAttribute("aria-expanded", String(!this.viewPreferences.comparisonChartCollapsed));
+      this.applyViewPreferences();
+    });
+    chartActions.append(metricControls, collapse);
+    heading.append(title, chartActions);
     const teamControls = el("div", "chart-teams");
     this.cards.forEach((card) => {
       this.chartWorlds.add(card.world.id);
@@ -653,6 +675,12 @@ export class Player {
     const H = box.height - 24;
     const view = this.effectiveView();
     const across = view === "both" ? 2 : 1;
+    const minimumBoard =
+      n === 1
+        ? W >= 760
+          ? Math.min(680, Math.max(480, Math.floor(W * (view === "both" ? 0.34 : 0.42))))
+          : Math.max(MIN_BOARD, Math.floor(W / across))
+        : MIN_BOARD;
     const fit = (chrome: number) => {
       let best = { cols: 1, size: 0 };
       for (let cols = 1; cols <= n; cols++) {
@@ -666,15 +694,15 @@ export class Player {
         // Prefer the squarer grid unless a wider one gives clearly bigger boards (it fills the screen better).
         if (size > best.size * 1.05 || (best.size === 0 && size > 0)) best = { cols, size };
       }
-      if (best.size < MIN_BOARD) {
+      if (best.size < minimumBoard) {
         // Too small for the readable minimum anyway: the grid that hides the least at that size.
-        const cardW = MIN_BOARD * across + (across - 1) * 8;
+        const cardW = minimumBoard * across + (across - 1) * 8;
         let least = Infinity;
         for (let cols = 1; cols <= n; cols++) {
           const rows = Math.ceil(n / cols);
           const hidden =
             Math.max(0, cols * cardW + (cols - 1) * 12 - W) +
-            Math.max(0, rows * (MIN_BOARD + chrome) + (rows - 1) * 12 - H);
+            Math.max(0, rows * (minimumBoard + chrome) + (rows - 1) * 12 - H);
           if (hidden < least) [least, best] = [hidden, { cols, size: best.size }];
         }
       }
@@ -684,10 +712,10 @@ export class Player {
     // if the boards would drop below the readable minimum, the feeds give up lines first (SPEC §9.2).
     let lines = this.expanded ? EXPANDED_LINES : COLLAPSED_LINES;
     let best = fit(this.chromeHeight(lines));
-    while (this.expanded && lines > COLLAPSED_LINES && best.size < MIN_BOARD)
+    while (this.expanded && lines > COLLAPSED_LINES && best.size < minimumBoard)
       best = fit(this.chromeHeight(--lines));
     for (const c of this.cards) c.feed.setLines(lines);
-    const size = Math.max(MIN_BOARD, best.size);
+    const size = Math.max(minimumBoard, best.size);
     this.boardsEl.style.gridTemplateColumns = `repeat(${best.cols}, ${size * across + (across - 1) * 8}px)`;
     const dpr = window.devicePixelRatio || 1;
     for (const c of this.cards) {
