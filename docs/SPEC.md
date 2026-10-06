@@ -344,7 +344,7 @@ A completed replay ends at its final simulation tick. The runner does not wake a
 
 ## 9. Viewer
 
-- **Layout:** a responsive grid of boards, one per team, each labelled once with its human-facing team name and live score. Column count follows available space, and visible cards keep corresponding sections aligned. The multi-metric comparison chart is a separate collapsible block below the grid.
+- **Layout:** a responsive single-row comparison of team cards, each labelled once with its human-facing team name and live score. Every selected team stays on the same screen and corresponding sections remain aligned; hiding teams gives each remaining card more room. Maps and communication graphs remain square. In combined mode, each card places equal-sized map and graph squares side by side. The multi-metric comparison chart is a separate collapsible block below the cards.
 - **Board:** the tile map, fire intensity, agents as role icons (§9.3), civilians with countdown rings, and fog of war shaded by the team's combined vision.
 - **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms).
 - **Mission and operational statistics:** civilians saved/lost, fires out/active, houses standing/destroyed, cost, model calls, messages, stale actions, idle ticks, and uncovered intensity-3 fire-ticks.
@@ -380,7 +380,7 @@ Shows the *shape* of a team's communication: who talks to whom, and how much.
 - **Follow newest:** while the feed is scrolled to the bottom it follows new messages. Once the user scrolls up it stays put and shows a "↓ new messages" button that jumps back to the bottom.
 - Each line shows the tick, sender → recipients, and text. Clicking a line seeks the player to that message's `sent_at`.
 - Seeking rebuilds the feed for the new `t`.
-- **Map-first board mode.** In board-only mode, maps use the available width instead of shrinking to keep every optional panel above the fold; the viewer-content pane may scroll vertically. Graph and combined modes continue to fit the window where practical. The board keeps a readable minimum size, and expanded feeds still give up lines before forcing an excessively small board.
+- **Responsive surfaces.** Selected teams never wrap into vertical rows. Board-only maps and graph-only communication diagrams use the available card width and height. Communication graphs stay square so their fixed node geometry remains comparable. Combined mode places equal-sized map and graph squares side by side; selecting fewer teams enlarges both. Expanded feeds give up lines before forcing the comparison beyond the available presentation height.
 - A pair filter from the graph (§9.1) shows as a removable chip above the feed.
 
 ### 9.3 Role icons

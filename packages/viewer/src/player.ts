@@ -48,6 +48,7 @@ interface Card {
   root: HTMLElement;
   canvas: HTMLCanvasElement;
   graph: HTMLCanvasElement;
+  wrap: HTMLElement;
   tooltip: HTMLElement;
   score: HTMLElement;
   chips: HTMLElement;
@@ -311,6 +312,7 @@ export class Player {
         root: card,
         canvas,
         graph,
+        wrap,
         tooltip,
         score,
         chips,
@@ -665,70 +667,58 @@ export class Player {
     const visible = this.focused ? [this.focused] : this.cards.filter((c) => c.visible);
     const n = Math.max(1, visible.length);
     const box = this.boardsEl.getBoundingClientRect();
-    const W = box.width - 24;
-    const H = box.height - 24;
+    const W = Math.max(MIN_BOARD, Math.floor(box.width));
+    const H = Math.max(MIN_BOARD, Math.floor(this.contentEl.clientHeight - 24));
     const view = this.effectiveView();
-    const across = view === "both" ? 2 : 1;
-    const minimumBoard =
-      n === 1
-        ? W >= 760
-          ? Math.min(680, Math.max(480, Math.floor(W * (view === "both" ? 0.34 : 0.42))))
-          : Math.max(MIN_BOARD, Math.floor(W / across))
-        : MIN_BOARD;
-    const fit = (chrome: number) => {
-      let best = { cols: 1, size: 0 };
-      for (let cols = 1; cols <= n; cols++) {
-        const rows = Math.ceil(n / cols);
-        const size = Math.floor(
-          Math.min(
-            ((W - (cols - 1) * 12) / cols - (across - 1) * 8) / across,
-            (H - (rows - 1) * 12) / rows - chrome,
-          ),
-        );
-        // Prefer the squarer grid unless a wider one gives clearly bigger boards (it fills the screen better).
-        if (size > best.size * 1.05 || (best.size === 0 && size > 0)) best = { cols, size };
-      }
-      if (best.size < minimumBoard) {
-        // Too small for the readable minimum anyway: the grid that hides the least at that size.
-        const cardW = minimumBoard * across + (across - 1) * 8;
-        let least = Infinity;
-        for (let cols = 1; cols <= n; cols++) {
-          const rows = Math.ceil(n / cols);
-          const hidden =
-            Math.max(0, cols * cardW + (cols - 1) * 12 - W) +
-            Math.max(0, rows * (minimumBoard + chrome) + (rows - 1) * 12 - H);
-          if (hidden < least) [least, best] = [hidden, { cols, size: best.size }];
-        }
-      }
-      return best;
-    };
-    // Card header + counters + feed. Expanded feeds shrink every board so the page never scrolls;
-    // if the boards would drop below the readable minimum, the feeds give up lines first (SPEC §9.2).
+    const gap = 12;
+    // Presentation mode: every selected team remains visible in one row.
+    // Users can hide teams or switch to a single-surface view when they want
+    // larger maps or graphs, without changing the cross-team alignment.
+    const cols = n;
+    const rows = 1;
+    let cardWidth = Math.floor((W - (cols - 1) * gap) / cols);
+    if (n === 1 && view === "board") cardWidth = Math.min(900, cardWidth);
+
+    // Expanded feeds yield lines before shrinking a visible surface below the readable minimum.
     let lines = this.expanded ? EXPANDED_LINES : COLLAPSED_LINES;
-    let best = fit(this.chromeHeight(lines));
-    while (this.expanded && lines > COLLAPSED_LINES && best.size < minimumBoard)
-      best = fit(this.chromeHeight(--lines));
-    // In board-only mode the map is the primary content. Use the available width and let the
-    // viewer-content pane scroll vertically when the optional panels make a card taller than the window.
-    if (view === "board") {
-      let cols = n <= 4 ? n : Math.ceil(n / 2);
-      while (cols > 1 && Math.floor((W - (cols - 1) * 12) / cols) < MIN_BOARD) cols--;
-      const widthSize = Math.floor((W - (cols - 1) * 12) / cols);
-      best = { cols, size: n === 1 ? Math.min(900, widthSize) : widthSize };
-    }
+    let usableHeight = Math.floor((H - (rows - 1) * gap) / rows - this.chromeHeight(lines));
+    while (this.expanded && lines > COLLAPSED_LINES && usableHeight < MIN_BOARD)
+      usableHeight = Math.floor((H - (rows - 1) * gap) / rows - this.chromeHeight(--lines));
+    usableHeight = Math.max(MIN_BOARD, usableHeight);
     for (const c of this.cards) c.feed.setLines(lines);
-    const size = Math.max(minimumBoard, best.size);
-    this.boardsEl.style.gridTemplateColumns = `repeat(${best.cols}, ${size * across + (across - 1) * 8}px)`;
+    this.boardsEl.style.gridTemplateColumns = `repeat(${cols}, ${cardWidth}px)`;
     const dpr = window.devicePixelRatio || 1;
     for (const c of this.cards) {
-      for (const cv of [c.canvas, c.graph]) {
-        cv.style.width = `${size}px`;
-        cv.style.height = `${size}px`;
-        cv.width = Math.round(size * dpr);
-        cv.height = Math.round(size * dpr);
+      const cell = c.canvas.parentElement!;
+      let mapSize = 0;
+      let graphSize = 0;
+      if (view === "board") {
+        mapSize = Math.min(900, cardWidth, usableHeight);
+      } else if (view === "graph") {
+        graphSize = Math.min(900, cardWidth, usableHeight);
+      } else {
+        mapSize = Math.min(900, Math.floor((cardWidth - 8) / 2), usableHeight);
+        graphSize = mapSize;
       }
-      c.canvas.parentElement!.style.display = view === "graph" ? "none" : "";
+      c.wrap.style.width = `${cardWidth}px`;
+      const surfaceHeight = Math.max(mapSize, graphSize);
+      c.wrap.style.height = `${surfaceHeight}px`;
+      c.wrap.style.justifyContent =
+        (view === "board" && mapSize < cardWidth) || (view === "graph" && graphSize < cardWidth)
+          ? "center"
+          : "";
+      cell.style.display = view === "graph" ? "none" : "";
+      cell.style.width = `${mapSize}px`;
+      cell.style.height = `${mapSize}px`;
+      c.canvas.style.width = `${mapSize}px`;
+      c.canvas.style.height = `${mapSize}px`;
+      c.canvas.width = Math.round(mapSize * dpr);
+      c.canvas.height = Math.round(mapSize * dpr);
       c.graph.style.display = view === "board" ? "none" : "";
+      c.graph.style.width = `${graphSize}px`;
+      c.graph.style.height = `${graphSize}px`;
+      c.graph.width = Math.round(graphSize * dpr);
+      c.graph.height = Math.round(graphSize * dpr);
     }
     const r = this.scrubMarks.getBoundingClientRect();
     this.scrubMarks.width = Math.round(r.width * dpr);
@@ -747,7 +737,8 @@ export class Player {
     const scorebar = this.viewPreferences.scoreBreakdown ? (c?.scorebar.offsetHeight ?? 44) : 0;
     const outcomes = this.viewPreferences.missionStats ? (c?.outcomes.offsetHeight ?? 104) : 0;
     const commentary = this.viewPreferences.commentary ? (c?.commentary.offsetHeight ?? 0) : 0;
-    return head + scorebar + outcomes + counters + (c?.feed.heightFor(lines) || 90) + commentary + 4;
+    const feed = this.viewPreferences.messages ? (c?.feed.heightFor(lines) ?? 90) : 0;
+    return head + scorebar + outcomes + counters + feed + commentary + 4;
   }
 
   private effectiveView(): View {

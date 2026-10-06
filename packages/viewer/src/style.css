@@ -244,7 +244,7 @@ a {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  align-self: stretch;
+  align-self: start;
   container-type: inline-size;
 }
 .card.leader {
@@ -279,7 +279,6 @@ a {
 .board-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
   flex: 0 0 auto;
   overflow: hidden;
 }

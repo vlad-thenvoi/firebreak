@@ -27,7 +27,7 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 | M9e Score explanation | done | score log in `timeline` (test: matches `tick_state` on every tick of every committed recording), chips, pop-ups, log, one labelled outcome chart, per-agent points |
 | M9f Viewer fixes | done | one expand state for every feed; pop-ups name the event (`SCORE_LABEL`, shared with the score log) and stack (`stackLabels`); layout fits the expanded feeds, then drops feed lines, then scrolls the boards area in the grid that hides the least |
 | M9g Replay commentator | done | omniscient post-match broadcast, persisted sidecars, automatic historical generation |
-| M9h Replay comparison | done | responsive score/mission/operational stats, per-team timeline lanes, multi-metric outcome chart, persistent panel and Dark/Light preferences, map-first board layout |
+| M9h Replay comparison | done | responsive score/mission/operational stats, per-team timeline lanes, multi-metric outcome chart, persistent panel and Dark/Light preferences, adaptive map/graph surface layout |
 
 ---
 
