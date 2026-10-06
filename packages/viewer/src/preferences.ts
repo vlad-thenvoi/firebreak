@@ -1,4 +1,5 @@
 export interface ViewPreferences {
+  scoreBreakdown: boolean;
   missionStats: boolean;
   operationalStats: boolean;
   messages: boolean;
@@ -10,6 +11,7 @@ export interface ViewPreferences {
 export const VIEW_PREFERENCES_KEY = "firebreak.viewer.preferences.v1";
 
 export const DEFAULT_VIEW_PREFERENCES: ViewPreferences = {
+  scoreBreakdown: true,
   missionStats: true,
   operationalStats: true,
   messages: true,

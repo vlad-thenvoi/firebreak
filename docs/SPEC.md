@@ -353,7 +353,7 @@ A completed replay ends at its final simulation tick. The runner does not wake a
 - **Communication graph** per team, shown in place of the board or beside it (§9.1).
 - **AI commentary:** an omniscient, post-match broadcast saved as a sidecar and displayed beneath each team without affecting the match.
 - **Inspector:** click an agent to see its latest observation, its prompt's message window, and its last LLM response.
-- **Controls:** play/pause, speed (0.5–10×), timeline scrubber with one labelled event row per visible team (global wind/bridge events span all rows), step ±1 tick, choose which teams are shown, and persistent visibility switches for mission stats, operational stats, messages, AI commentary, and the comparison chart. The agent inspector distinguishes the last completed decision from a model call that is still in flight, so provider latency is not mistaken for deliberate idling.
+- **Controls:** play/pause, speed (0.5–10×), timeline scrubber with one labelled event row per visible team (global wind/bridge events span all rows), step ±1 tick, choose which teams are shown, and persistent visibility switches for the score breakdown, mission stats, operational stats, messages, AI commentary, and the comparison chart. The agent inspector distinguishes the last completed decision from a model call that is still in flight, so provider latency is not mistaken for deliberate idling.
 - Stack: Vite + TypeScript + Canvas 2D (six 20×20 boards are far below what needs WebGL). The build is one self-contained `index.html`, which the server serves and `export` embeds a recording into.
 - URL parameters: `?rec=<file>`, `?live`, `?t=<seconds>`, `?paused`, `?speed=<n>`, `?view=board|graph|both`, `?feed=messages|actions|all`.
 
@@ -380,7 +380,7 @@ Shows the *shape* of a team's communication: who talks to whom, and how much.
 - **Follow newest:** while the feed is scrolled to the bottom it follows new messages. Once the user scrolls up it stays put and shows a "↓ new messages" button that jumps back to the bottom.
 - Each line shows the tick, sender → recipients, and text. Clicking a line seeks the player to that message's `sent_at`.
 - Seeking rebuilds the feed for the new `t`.
-- **No page scroll.** The whole viewer (controls, every card with its board and feed) always fits the window, collapsed or expanded. When the feeds expand, the layout recomputes the board size with the expanded feed height, so every board shrinks by the same amount instead of the page growing a scrollbar. Collapsing restores the larger boards. Only the feed itself scrolls. The board keeps a readable minimum size; if the window is too small even for that, the feed gives up lines before the page scrolls. If even three lines don't fit (e.g. *both* at 1440×900 with four or more teams), the boards area scrolls, in the grid that hides the least, rather than cutting a card off.
+- **Map-first board mode.** In board-only mode, maps use the available width instead of shrinking to keep every optional panel above the fold; the viewer-content pane may scroll vertically. Graph and combined modes continue to fit the window where practical. The board keeps a readable minimum size, and expanded feeds still give up lines before forcing an excessively small board.
 - A pair filter from the graph (§9.1) shows as a removable chip above the feed.
 
 ### 9.3 Role icons
@@ -424,10 +424,10 @@ The feed can show what agents **do**, not just what they say. Every tool call an
 
 The score must be explainable at a glance: what it's made of, what changed it, and who earned it.
 
-- **Breakdown under the score:** four chips that add up to the total, e.g.
-  `🏠 9 × 5 = 45 · 🧍 2 × 10 = 20 · ☠ 1 × −20 = −20 · 🔥 7 × 1 = 7 → 52`.
-  Hovering a chip explains the rule ("+5 for each house still standing; 10 at start, 1 destroyed"). The chips use the §9.3 icon set; emoji above are only for this document.
-- **Starting score:** a small `started at 50 (10 houses)` note, so a score that drops from 50 at tick 0 isn't a surprise (§4.6).
+- **Breakdown under the score:** four aligned components behind the total already shown in the card header, e.g.
+  `🏠 9 × 5 = 45 · 🧍 2 × 10 = 20 · ☠ 1 × −20 = −20 · 🔥 7 × 1 = 7`.
+  Hovering a component explains the rule ("+5 for each house still standing; 10 at start, 1 destroyed"). The components use the §9.3 icon set; emoji above are only for this document. This block has its own persisted visibility switch in **Panels**.
+- **Starting score:** a small `Initial score: 50 from 10 houses` note, so a score that drops from 50 at tick 0 isn't a surprise (§4.6).
 - **Event pop-ups:** when a scoring event happens, a floating label naming **what happened** rises from its tile on the board (green for gains, red for losses) and fades within about a tick of game time: `Civilian evacuated` (`civilian_evacuated`), `Civilian lost` (`civilian_lost`), `Fire put out` (`extinguished`), `House destroyed` (`house_destroyed`). The label says the event, not the points; the points are in the score log and breakdown chips. Labels are short so they stay readable at the smallest board size; overlapping pop-ups on the same tile or tick stack vertically instead of drawing on top of each other. The card's score briefly flashes the same colour.
 - **Score log:** clicking the score opens a list of every scoring event up to `t`: tick, event, delta, who it's credited to, and the running total (e.g. `t23  🧍 c2 evacuated by R  +10  → 62`). Clicking a line seeks to it. Built from the engine events in §4.6, so it always matches the total.
 - **Outcome chart:** one labelled, collapsible chart below the cards shows score or another selected outcome over ticks, with one line per selected team on a shared y-axis. Cards keep only the score breakdown and clickable score log; unexplained miniature charts are intentionally omitted.

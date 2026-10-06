@@ -449,6 +449,11 @@ export class Player {
     closeForm.append(close);
     const options = el("div", "view-options");
     const definitions: { key: keyof ViewPreferences; label: string; detail: string }[] = [
+      {
+        key: "scoreBreakdown",
+        label: "Score breakdown",
+        detail: "House, rescue, loss, and extinguishment calculations",
+      },
       { key: "missionStats", label: "Mission outcomes", detail: "Civilians, fires, and houses" },
       {
         key: "operationalStats",
@@ -477,6 +482,7 @@ export class Player {
     reset.type = "button";
     reset.addEventListener("click", () => {
       this.viewPreferences = {
+        scoreBreakdown: true,
         missionStats: true,
         operationalStats: true,
         messages: true,
@@ -509,6 +515,7 @@ export class Player {
 
   private applyViewPreferences(persist = true) {
     const p = this.viewPreferences;
+    this.shell.classList.toggle("hide-score-breakdown", !p.scoreBreakdown);
     this.shell.classList.toggle("hide-mission-stats", !p.missionStats);
     this.shell.classList.toggle("hide-operational-stats", !p.operationalStats);
     this.shell.classList.toggle("hide-messages", !p.messages);
@@ -704,6 +711,14 @@ export class Player {
     let best = fit(this.chromeHeight(lines));
     while (this.expanded && lines > COLLAPSED_LINES && best.size < minimumBoard)
       best = fit(this.chromeHeight(--lines));
+    // In board-only mode the map is the primary content. Use the available width and let the
+    // viewer-content pane scroll vertically when the optional panels make a card taller than the window.
+    if (view === "board") {
+      let cols = n <= 4 ? n : Math.ceil(n / 2);
+      while (cols > 1 && Math.floor((W - (cols - 1) * 12) / cols) < MIN_BOARD) cols--;
+      const widthSize = Math.floor((W - (cols - 1) * 12) / cols);
+      best = { cols, size: n === 1 ? Math.min(900, widthSize) : widthSize };
+    }
     for (const c of this.cards) c.feed.setLines(lines);
     const size = Math.max(minimumBoard, best.size);
     this.boardsEl.style.gridTemplateColumns = `repeat(${best.cols}, ${size * across + (across - 1) * 8}px)`;
@@ -731,10 +746,10 @@ export class Player {
   private chromeHeight(lines: number): number {
     const c = this.cards.find((x) => x.root.style.display !== "none") ?? this.cards[0];
     const head = c?.root.querySelector<HTMLElement>(".card-head")?.offsetHeight || 42;
-    const counters = c?.counters.offsetHeight || 46;
-    const scorebar = c?.scorebar.offsetHeight || 44;
-    const outcomes = c?.outcomes.offsetHeight || 0;
-    const commentary = c?.commentary.offsetHeight || 0;
+    const counters = this.viewPreferences.operationalStats ? (c?.counters.offsetHeight ?? 46) : 0;
+    const scorebar = this.viewPreferences.scoreBreakdown ? (c?.scorebar.offsetHeight ?? 44) : 0;
+    const outcomes = this.viewPreferences.missionStats ? (c?.outcomes.offsetHeight ?? 104) : 0;
+    const commentary = this.viewPreferences.commentary ? (c?.commentary.offsetHeight ?? 0) : 0;
     return head + scorebar + outcomes + counters + (c?.feed.heightFor(lines) || 90) + commentary + 4;
   }
 
@@ -1094,18 +1109,18 @@ export class Player {
     }
   }
 
-  /** Four chips that add up to the score, and the starting score (SPEC §9.5). */
+  /** Four score components and the starting score (SPEC §9.5). */
   private renderBreakdown(c: Card, s: Score) {
     const key = `${s.houses_standing}|${s.evacuated}|${s.lost}|${s.extinguished}|${s.total}`;
     if (key === c.chipsKey) return;
     c.chipsKey = key;
     c.chips.replaceChildren(...this.scoreChips(c.world, s));
     const houses = c.world.startHouses || s.houses_standing + s.houses_destroyed;
-    c.started.textContent = `started at ${c.world.startScore} (${houses} houses)`;
+    c.started.textContent = `Initial score: ${c.world.startScore} from ${houses} houses`;
     c.started.title = STARTED_TITLE;
   }
 
-  /** The four chips that add up to the total, and the total (SPEC §9.5). */
+  /** The four components behind the total already shown in the card header (SPEC §9.5). */
   private scoreChips(w: WorldTimeline, s: Score): HTMLElement[] {
     const chip = (icon: IconName, n: number, per: number, title: string) => {
       const d = el("span", `chip${n ? "" : " zero"}${per < 0 && n ? " loss" : ""}`);
@@ -1140,7 +1155,6 @@ export class Player {
       ),
       chip("lost", s.lost, -20, `−20 for each civilian lost to fire or a missed deadline: ${s.lost} so far`),
       chip("fire", s.extinguished, 1, `+1 for each fire tile put out: ${s.extinguished} so far`),
-      el("b", "chip-total", `= ${s.total}`),
     ];
   }
 
