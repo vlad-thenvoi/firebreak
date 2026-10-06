@@ -51,7 +51,6 @@ interface Card {
   tooltip: HTMLElement;
   score: HTMLElement;
   chips: HTMLElement;
-  started: HTMLElement;
   scorebar: HTMLElement;
   outcomes: HTMLElement;
   counters: HTMLElement;
@@ -275,8 +274,7 @@ export class Player {
       head.append(label, score);
       const scorebar = el("div", "scorebar");
       const chips = el("div", "chips");
-      const started = el("span", "started");
-      scorebar.append(chips, started);
+      scorebar.append(chips);
       const wrap = el("div", "board-wrap");
       const canvas = el("canvas");
       const graph = el("canvas", "graph");
@@ -316,7 +314,6 @@ export class Player {
         tooltip,
         score,
         chips,
-        started,
         scorebar,
         outcomes,
         counters,
@@ -1109,15 +1106,12 @@ export class Player {
     }
   }
 
-  /** Four score components and the starting score (SPEC §9.5). */
+  /** Four score components behind the total in the card header (SPEC §9.5). */
   private renderBreakdown(c: Card, s: Score) {
     const key = `${s.houses_standing}|${s.evacuated}|${s.lost}|${s.extinguished}|${s.total}`;
     if (key === c.chipsKey) return;
     c.chipsKey = key;
     c.chips.replaceChildren(...this.scoreChips(c.world, s));
-    const houses = c.world.startHouses || s.houses_standing + s.houses_destroyed;
-    c.started.textContent = `Initial score: ${c.world.startScore} from ${houses} houses`;
-    c.started.title = STARTED_TITLE;
   }
 
   /** The four components behind the total already shown in the card header (SPEC §9.5). */

@@ -178,7 +178,7 @@ Also viewer-only. Everything needed is already in the recording: tool calls in `
 
 ### M9e: Score explanation (M)
 - `timeline`: a per-world score log from the scoring events (§4.6 table), with delta, credited agent and running total; a test that the running total equals `tick_state.score.total` on every tick of the committed recordings.
-- Card: breakdown chips under the score, "started at N" note, score flash; click the score to open the log (click a line to seek).
+- Card: aligned breakdown components under the score and score flash; click the score to open the log (click a line to seek). Do not repeat the initial score on a dedicated row because the house component already shows it.
 - Board: floating score pop-ups at the event's tile.
 - Outcome chart: one labelled, collapsible all-teams chart below the cards. Do not repeat unexplained sparklines or a second miniature chart.
 - Inspector: per-agent points and the team's losses.

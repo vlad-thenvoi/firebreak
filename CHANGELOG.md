@@ -50,7 +50,7 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Increased the map size when a single team is visible so laptop replays use the available width instead of leaving a small centered board.
 - Simplified replay cards by removing the internal team key, repeated per-card role icons, and redundant miniature score charts; the labelled outcome chart remains the single time-series view.
 - Updated the global legend to render the current role icons, restored the orchestrator's `HQ` label, and explained role-coloured and blocked order-target lines.
-- Reflowed the score components into an aligned grid, removed the duplicate calculated total, added a persisted score-breakdown switch to **Panels**, and made board-only layouts use the available viewport width.
+- Reflowed the score components into an aligned grid, removed the duplicate total and initial-score row, added a persisted score-breakdown switch to **Panels**, and made board-only layouts use the available viewport width.
 
 ### Fairness and security
 

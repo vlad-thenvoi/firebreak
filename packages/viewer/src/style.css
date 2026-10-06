@@ -1541,12 +1541,6 @@ a {
 .chip.loss {
   color: var(--bad);
 }
-.started {
-  display: block;
-  margin-top: 4px;
-  white-space: nowrap;
-  cursor: help;
-}
 @container (max-width: 360px) {
   .chips {
     grid-template-columns: repeat(2, minmax(0, 1fr));
