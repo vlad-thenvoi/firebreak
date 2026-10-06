@@ -1,5 +1,6 @@
 import type { MatchHeader, RecordingBundle, StreamFrame } from "@firebreak/engine";
-import { Player } from "./player";
+import type { FeedMode } from "./feed";
+import { Player, type View } from "./player";
 import { renderRulesPage, rulesHref } from "./reference";
 import "./style.css";
 import { applyViewerTheme, createThemeToggle, loadViewerTheme } from "./theme";
@@ -14,6 +15,10 @@ declare global {
 const app = document.getElementById("app")!;
 const params = new URLSearchParams(location.search);
 applyViewerTheme(loadViewerTheme());
+const view = {
+  ...(params.has("view") ? { view: params.get("view") as View } : {}),
+  ...(params.has("feed") ? { feed: params.get("feed") as FeedMode } : {}),
+};
 
 function play(bundle: RecordingBundle, name?: string, commentaryError?: string) {
   const tl = new Timeline(bundle.header);
@@ -23,6 +28,7 @@ function play(bundle: RecordingBundle, name?: string, commentaryError?: string) 
     ...(params.has("t") ? { startAt: Number(params.get("t")) } : {}),
     ...(params.has("speed") ? { speed: Number(params.get("speed")) } : {}),
     paused: params.has("paused"),
+    ...view,
     ...(name ? { recordingName: name, fetchPrompt: (id: string) => fetchPrompt(name, id) } : {}),
     ...(commentaryError ? { commentaryError } : {}),
   });
@@ -64,7 +70,7 @@ function live() {
     if (msg.type === "header") {
       tl = new Timeline(msg.header);
       for (const f of pending.splice(0)) tl.add(f);
-      player = new Player(app, tl, { mode: "live", fetchPrompt: async () => null });
+      player = new Player(app, tl, { mode: "live", fetchPrompt: async () => null, ...view });
       return;
     }
     if (!tl) {

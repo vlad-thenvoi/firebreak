@@ -1,11 +1,31 @@
-import { formatOrder, type LlmFrame } from "@firebreak/engine";
+import { formatOrder, type LlmFrame, type Score } from "@firebreak/engine";
+import { drawChart, teamColor } from "./chart";
+import { COLLAPSED_LINES, EXPANDED_LINES, FEED_MODES, Feed, agentIcon, type FeedMode } from "./feed";
+import { drawGraph, hitGraph, nodeTraffic, type GraphHits, type GraphNode } from "./graph";
+import { iconImg, type IconName } from "./icons";
+import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from "./preferences";
 import { compactRoleLegend, createLegendDialog, rulesHref } from "./reference";
 import { HQ_ID, drawBoard, type HitTarget } from "./render";
-import type { OutcomeMetric, Timeline, WorldTimeline } from "./timeline";
-import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from "./preferences";
 import { createThemeToggle } from "./theme";
+import {
+  edgeKey,
+  splitEdge,
+  type Edges,
+  type OutcomeMetric,
+  type ScoreEntry,
+  type Timeline,
+  type WorldTimeline,
+} from "./timeline";
 
 const SPEEDS = [0.5, 1, 2, 4, 10];
+const VIEWS = ["board", "graph", "both"] as const;
+export type View = (typeof VIEWS)[number];
+/** The graph's "recent" window (SPEC §9.1). */
+const RECENT_TICKS = 10;
+/** Smallest board side in px; below it the expanded feeds show fewer lines instead. */
+const MIN_BOARD = 220;
+const STARTED_TITLE =
+  "Standing houses count from tick 0, so the score starts above zero and each destroyed house shows as −5";
 const TIMELINE_MARKERS = {
   civilian_lost: { color: "#ff4d6d", label: "civilian lost" },
   civilian_evacuated: { color: "#7cfc9a", label: "civilian evacuated" },
@@ -13,7 +33,6 @@ const TIMELINE_MARKERS = {
   wind_changed: { color: "#5bc0eb", label: "wind changed" },
   bridge_collapsed: { color: "#c792ea", label: "bridge collapsed" },
 } as const;
-
 const CHART_METRICS: Record<OutcomeMetric, { label: string; help: string; better: "high" | "low" }> = {
   score: { label: "Score", help: "Total points at each tick", better: "high" },
   extinguished: { label: "Fires out", help: "Cumulative fire tiles extinguished", better: "high" },
@@ -24,22 +43,35 @@ const CHART_METRICS: Record<OutcomeMetric, { label: string; help: string; better
   houses_destroyed: { label: "Houses destroyed", help: "Cumulative houses destroyed", better: "low" },
 };
 
-const TEAM_COLOR_VARS = ["--team-1", "--team-2", "--team-3", "--team-4", "--team-5", "--team-6"];
-
 interface Card {
   world: WorldTimeline;
   root: HTMLElement;
   canvas: HTMLCanvasElement;
+  graph: HTMLCanvasElement;
+  tooltip: HTMLElement;
   score: HTMLElement;
+  chips: HTMLElement;
+  started: HTMLElement;
+  spark: HTMLCanvasElement;
+  scorebar: HTMLElement;
   outcomes: HTMLElement;
   counters: HTMLElement;
-  ticker: HTMLElement;
-  messageBody: HTMLElement;
+  feed: Feed;
   commentary: HTMLElement;
   results: HTMLElement;
   hits: HitTarget[];
+  graphHits: GraphHits;
+  hoverEdge: string | null;
+  hoverAgent: string | null;
   visible: boolean;
+  color: string;
+  /** Last score shown and the breakdown key, to flash on change and rebuild chips only when needed. */
+  lastScore: number | null;
+  chipsKey: string;
+  resultsKey: string;
 }
+
+const silent = (team: string) => team.startsWith("none") || team === "perfect" || team.startsWith("bots");
 
 export interface PlayerOptions {
   mode: "live" | "replay";
@@ -50,6 +82,10 @@ export interface PlayerOptions {
   startAt?: number;
   paused?: boolean;
   speed?: number;
+  /** Card view (URL ?view=). Unset: board, or both when focused on one team. */
+  view?: View;
+  /** Feed tab (URL ?feed=). Default: all. */
+  feed?: FeedMode;
   /** Non-fatal automatic commentary-generation failure. */
   commentaryError?: string;
 }
@@ -80,13 +116,27 @@ export class Player {
   private playBtn!: HTMLButtonElement;
   private speedBtns: HTMLButtonElement[] = [];
   private inspector!: HTMLElement;
-  private selected: { world: string; agent: string } | null = null;
+  /** The inspected agent, and the decision pinned from a feed line or ◀ / ▶ (null: follow the latest). */
+  private selected: { world: string; agent: string; pin: string | null } | null = null;
+  /** The world whose score log is open in the side panel. */
+  private scoreLog: string | null = null;
   private inspectorKey = "";
   private lastFrame = performance.now();
   private badge!: HTMLElement;
-  private legend!: HTMLDialogElement;
+  private view: View | null = null;
+  private recent = false;
+  private viewBtns: HTMLButtonElement[] = [];
+  private recentBtn!: HTMLButtonElement;
+  private expandBtn!: HTMLButtonElement;
+  /** One expand state for every feed (SPEC §9.2). */
+  private expanded = false;
+  private feedMode: FeedMode = "all";
+  private feedBtns: HTMLButtonElement[] = [];
+  private hideDone = false;
+  private orderLines = true;
+  private chart!: HTMLCanvasElement;
+  private legendDialog!: HTMLDialogElement;
   private broadcastDialog!: HTMLDialogElement;
-  private messageDialog!: HTMLDialogElement;
   private subagentDialog!: HTMLDialogElement;
   private viewDialog!: HTMLDialogElement;
   private viewPreferences: ViewPreferences = loadViewPreferences();
@@ -105,6 +155,8 @@ export class Player {
     this.followLive = o.mode === "live";
     if (o.startAt !== undefined) this.t = o.startAt * 1000;
     if (o.paused) this.playing = false;
+    if (o.view && VIEWS.includes(o.view)) this.view = o.view;
+    if (o.feed && FEED_MODES.includes(o.feed)) this.feedMode = o.feed;
     this.build();
     if (o.speed) this.setSpeed(o.speed);
     window.addEventListener("resize", () => this.layout());
@@ -138,17 +190,61 @@ export class Player {
       `seed ${h.seed} · ${h.ticks} ticks × ${h.tick_ms / 1000}s · ${clockMode === "synchronized" ? "synchronized" : "real time"} · ${h.match_id}`,
     );
     const toggles = el("div", "toggles");
+    const viewbar = el("div", "viewbar");
+    const seg = el("div", "seg");
+    for (const v of VIEWS) {
+      const b = el("button", "", v);
+      b.title = `Show the ${v === "both" ? "board and the communication graph" : v === "graph" ? "communication graph" : "board"} on every card`;
+      b.addEventListener("click", () => this.setView(v));
+      this.viewBtns.push(b);
+      seg.append(b);
+    }
+    this.recentBtn = el("button", "", "whole match");
+    this.recentBtn.title = `Graph: count every message so far, or only the last ${RECENT_TICKS} ticks`;
+    this.recentBtn.addEventListener("click", () => {
+      this.recent = !this.recent;
+      this.recentBtn.textContent = this.recent ? `last ${RECENT_TICKS} ticks` : "whole match";
+      this.recentBtn.classList.toggle("on", this.recent);
+    });
+    this.expandBtn = el("button", "", "expand feeds");
+    this.expandBtn.title = "Expand or collapse every message feed";
+    this.expandBtn.addEventListener("click", () => this.setExpanded(!this.expanded));
+    const feedSeg = el("div", "seg");
+    for (const m of FEED_MODES) {
+      const b = el("button", "", m);
+      b.title =
+        m === "messages"
+          ? "Feeds show messages"
+          : m === "actions"
+            ? "Feeds show what agents do: tool calls and order outcomes"
+            : "Feeds show messages and actions, by time";
+      b.addEventListener("click", () => this.setFeedMode(m));
+      this.feedBtns.push(b);
+      feedSeg.append(b);
+    }
+    const doneBtn = el("button", "", "completions");
+    doneBtn.title = "Show or hide order completions in the feeds (move_to completions are frequent)";
+    doneBtn.classList.add("on");
+    doneBtn.addEventListener("click", () => {
+      this.hideDone = !this.hideDone;
+      doneBtn.classList.toggle("on", !this.hideDone);
+      this.syncFeeds();
+    });
+    const linesBtn = el("button", "on", "order lines");
+    linesBtn.title = "Draw each agent's current order as a dashed line to its target (red when blocked)";
+    linesBtn.addEventListener("click", () => {
+      this.orderLines = !this.orderLines;
+      linesBtn.classList.toggle("on", this.orderLines);
+    });
+    viewbar.append(seg, this.recentBtn, feedSeg, doneBtn, this.expandBtn, linesBtn);
     const help = el("div", "help-links");
+    const viewButton = el("button", "top-action", "Panels");
+    viewButton.addEventListener("click", () => this.viewDialog.showModal());
     const legendButton = el("button", "top-action", "Legend");
-    legendButton.title = "Map legend (L)";
-    legendButton.addEventListener("click", () => this.legend.showModal());
+    legendButton.addEventListener("click", () => this.legendDialog.showModal());
     const rules = el("a", "top-action", "Rules");
     rules.href = rulesHref();
-    const viewButton = el("button", "top-action", "View");
-    viewButton.title = "Show or hide replay panels";
-    viewButton.addEventListener("click", () => this.viewDialog.showModal());
     const subagentsButton = el("button", "top-action", "Sub-agents");
-    subagentsButton.title = "View this replay's sub-agent lifecycle and configure the next run";
     subagentsButton.addEventListener("click", () => this.subagentDialog.showModal());
     const themeButton = createThemeToggle(() => {
       this.chartRenderKey = "";
@@ -156,7 +252,7 @@ export class Player {
       requestAnimationFrame(() => this.layout());
     });
     help.append(viewButton, legendButton, rules, subagentsButton, themeButton);
-    top.append(brand, this.badge, meta, compactRoleLegend(), el("div", "spacer"), help, toggles);
+    top.append(brand, this.badge, meta, compactRoleLegend(), viewbar, el("div", "spacer"), help, toggles);
 
     const main = el("div", "main");
     this.contentEl = el("div", "viewer-content");
@@ -165,26 +261,45 @@ export class Player {
     this.contentEl.append(this.boardsEl);
     main.append(this.contentEl, this.inspector);
 
+    let index = 0;
     for (const w of this.tl.worlds.values()) {
       const card = el("div", "card");
       const head = el("div", "card-head");
       const score = el("div", "score", "0");
-      head.append(el("div", "label", w.label), el("div", "team", w.team), score);
+      score.title = "Click for the score log: every scoring event so far";
+      const color = teamColor(w.team, index++);
+      const label = el("div", "label");
+      const swatch = el("span", "swatch");
+      swatch.style.background = color;
+      swatch.title = "This team's line in the score chart";
+      label.append(swatch, document.createTextNode(w.label));
+      head.append(label, el("div", "team", w.team), this.legend(w), score);
+      const scorebar = el("div", "scorebar");
+      const chips = el("div", "chips");
+      const started = el("span", "started");
+      const spark = el("canvas", "spark");
+      const sparkRow = el("div", "spark-row");
+      sparkRow.append(started, spark);
+      scorebar.append(chips, sparkRow);
       const wrap = el("div", "board-wrap");
       const canvas = el("canvas");
+      const graph = el("canvas", "graph");
+      const tooltip = el("div", "graph-tip");
       const results = el("div", "results");
       results.style.display = "none";
-      wrap.append(canvas, results);
-      const counters = el("div", "counters");
+      const cell = el("div", "board-cell");
+      cell.append(canvas, results);
+      wrap.append(cell, graph, tooltip);
       const outcomes = el("div", "outcomes");
-      const ticker = el("section", "ticker");
-      const tickerHead = el("div", "ticker-head");
-      tickerHead.append(el("span", "", "TEAM MESSAGES"));
-      const readMessages = el("button", "ticker-read", "Read full");
-      readMessages.type = "button";
-      tickerHead.append(readMessages);
-      const messageBody = el("div", "ticker-body");
-      ticker.append(tickerHead, messageBody);
+      const counters = el("div", "counters");
+      const feed = new Feed(w, {
+        tickMs: this.tl.tickMs,
+        silent: silent(w.team),
+        onSeek: (t) => this.seek(t),
+        onPick: (agent, llmId) => this.select(c, agent, llmId),
+        onToggle: (on) => this.setExpanded(on),
+      });
+      feed.setMode(this.feedMode, this.hideDone);
       const commentary = el("section", "commentary");
       const commentaryHead = el("div", "commentary-head");
       commentaryHead.append(el("span", "", "AI BROADCAST"));
@@ -192,28 +307,55 @@ export class Player {
       commentaryActions.append(el("span", "commentary-status", "post-match observer"));
       const readCommentary = el("button", "commentary-read", "Read full");
       readCommentary.type = "button";
-      readCommentary.addEventListener("click", () => this.openBroadcast(c));
       commentaryActions.append(readCommentary);
       commentaryHead.append(commentaryActions);
       commentary.append(commentaryHead, el("div", "commentary-body meta", "Waiting for commentary…"));
-      card.append(head, wrap, outcomes, counters, ticker, commentary);
+      card.append(head, scorebar, wrap, outcomes, counters, feed.root, commentary);
       this.boardsEl.append(card);
       const c: Card = {
         world: w,
         root: card,
         canvas,
+        graph,
+        tooltip,
         score,
+        chips,
+        started,
+        spark,
+        scorebar,
         outcomes,
         counters,
-        ticker,
-        messageBody,
+        feed,
         commentary,
         results,
         hits: [],
+        graphHits: { nodes: [], edges: [] },
+        hoverEdge: null,
+        hoverAgent: null,
         visible: true,
+        color,
+        lastScore: null,
+        chipsKey: "",
+        resultsKey: "",
       };
-      readMessages.addEventListener("click", () => this.openMessages(c));
+      readCommentary.addEventListener("click", () => this.openBroadcast(c));
       canvas.addEventListener("click", (e) => this.onClick(c, e));
+      canvas.addEventListener("mousemove", (e) => {
+        c.hoverAgent = this.hitAgent(c, e);
+        canvas.title = c.hoverAgent ? "" : "Click an agent to inspect it";
+      });
+      canvas.addEventListener("mouseleave", () => (c.hoverAgent = null));
+      score.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.openScoreLog(c);
+      });
+      spark.addEventListener("mousemove", (e) => this.onSparkHover(c, e));
+      graph.addEventListener("click", (e) => this.onGraphClick(c, e));
+      graph.addEventListener("mousemove", (e) => this.onGraphHover(c, e));
+      graph.addEventListener("mouseleave", () => {
+        c.hoverEdge = null;
+        tooltip.style.display = "none";
+      });
       head.title = "Click to focus on this team (click again for all)";
       head.style.cursor = "pointer";
       head.addEventListener("click", () => this.toggleFocus(c));
@@ -260,9 +402,13 @@ export class Player {
     });
     scrubWrap.append(this.scrubMarks, this.scrub);
     this.clockEl = el("div", "clock");
+    this.chart = el("canvas", "score-chart");
+    this.chart.title = "Score over the match, one line per team (colours as in the card headers)";
+    this.chart.addEventListener("mousemove", (e) => this.onChartHover(e));
+    controls.append(scrubWrap, this.clockEl);
+    if (this.tl.worlds.size > 1) controls.append(this.chart);
+    this.timelineTeamKey = el("div", "timeline-team-key");
     const timelineKey = el("div", "timeline-key");
-    timelineKey.title =
-      "Timeline event markers. Team-specific outcomes may appear once per team; shared wind and bridge events appear once.";
     for (const { color, label } of Object.values(TIMELINE_MARKERS)) {
       const item = el("span");
       const mark = el("i");
@@ -270,8 +416,7 @@ export class Player {
       item.append(mark, document.createTextNode(label));
       timelineKey.append(item);
     }
-    this.timelineTeamKey = el("div", "timeline-team-key");
-    controls.append(scrubWrap, this.clockEl, this.timelineTeamKey, timelineKey);
+    controls.append(this.timelineTeamKey, timelineKey);
     if (this.o.mode === "live") {
       const liveBtn = el("button", "", "● live");
       liveBtn.addEventListener("click", () => {
@@ -281,30 +426,27 @@ export class Player {
       controls.append(liveBtn);
     }
 
-    this.legend = createLegendDialog();
+    this.legendDialog = createLegendDialog();
     this.viewDialog = this.createViewDialog();
     this.subagentDialog = this.createSubagentDialog();
     this.broadcastDialog = el("dialog", "broadcast-dialog") as HTMLDialogElement;
     this.broadcastDialog.addEventListener("click", (event) => {
       if (event.target === this.broadcastDialog) this.broadcastDialog.close();
     });
-    this.messageDialog = el("dialog", "broadcast-dialog message-dialog") as HTMLDialogElement;
-    this.messageDialog.addEventListener("click", (event) => {
-      if (event.target === this.messageDialog) this.messageDialog.close();
-    });
     shell.append(
       top,
       main,
       controls,
       this.viewDialog,
-      this.legend,
+      this.legendDialog,
       this.subagentDialog,
       this.broadcastDialog,
-      this.messageDialog,
     );
     this.root.replaceChildren(shell);
     this.applyViewPreferences(false);
     this.setSpeed(1);
+    this.syncView();
+    this.syncFeeds();
     requestAnimationFrame(() => this.layout());
   }
 
@@ -317,31 +459,15 @@ export class Player {
     closeForm.append(close);
     const options = el("div", "view-options");
     const definitions: { key: keyof ViewPreferences; label: string; detail: string }[] = [
-      {
-        key: "missionStats",
-        label: "Mission outcomes",
-        detail: "Civilians, fires, and houses with their score effects",
-      },
+      { key: "missionStats", label: "Mission outcomes", detail: "Civilians, fires, and houses" },
       {
         key: "operationalStats",
         label: "Operational stats",
-        detail: "Cost, model calls, messages, stale actions, idle time, and uncovered I3 fires",
+        detail: "Cost, calls, stale actions, idle time, and uncovered I3 fires",
       },
-      {
-        key: "messages",
-        label: "Team messages",
-        detail: "The latest communication sent by each team",
-      },
-      {
-        key: "commentary",
-        label: "AI commentary",
-        detail: "Human-readable omniscient broadcast under each team",
-      },
-      {
-        key: "comparisonChart",
-        label: "Outcome chart",
-        detail: "The cross-team timeline and its metric controls",
-      },
+      { key: "messages", label: "Team feed", detail: "Messages and agent actions" },
+      { key: "commentary", label: "AI commentary", detail: "Human-readable omniscient broadcast" },
+      { key: "comparisonChart", label: "Outcome chart", detail: "Cross-team metrics over time" },
     ];
     for (const definition of definitions) {
       const label = el("label");
@@ -375,11 +501,7 @@ export class Player {
       closeForm,
       el("div", "eyebrow", "Persistent display preferences"),
       el("h2", "", "Replay panels"),
-      el(
-        "p",
-        "meta",
-        "Changes apply immediately and are remembered for the next recording you open in this browser.",
-      ),
+      el("p", "meta", "Changes apply immediately and are remembered in this browser."),
       options,
       reset,
     );
@@ -405,25 +527,10 @@ export class Player {
     const closeForm = el("form") as HTMLFormElement;
     closeForm.method = "dialog";
     const close = el("button", "dialog-close", "×");
-    close.setAttribute("aria-label", "Close sub-agent settings");
     closeForm.append(close);
-
     const resolved = this.tl.header.config.resolved as
       { subagents?: { max_lifetime_ticks?: number } } | undefined;
     const recordedLimit = Number(resolved?.subagents?.max_lifetime_ticks ?? 0);
-    const recorded = el(
-      "p",
-      "setting-current",
-      recordedLimit > 0
-        ? `This replay: hard ${recordedLimit}-tick limit enabled.`
-        : "This replay: task-driven lifecycle with no fixed tick limit.",
-    );
-    const description = el(
-      "p",
-      "meta",
-      "A worker owns one bounded assignment with explicit done-when criteria until it reports verified completion or an unrecoverable blockage. Enable a hard limit only as an experimental safety cutoff.",
-    );
-
     const controls = el("div", "subagent-settings");
     const enabledLabel = el("label");
     const enabled = el("input") as HTMLInputElement;
@@ -435,16 +542,9 @@ export class Player {
     const ticks = el("input") as HTMLInputElement;
     ticks.type = "number";
     ticks.min = "1";
-    ticks.step = "1";
     ticks.value = String(recordedLimit > 0 ? recordedLimit : 8);
     ticksLabel.append(ticks);
     controls.append(enabledLabel, ticksLabel);
-
-    const note = el(
-      "p",
-      "meta",
-      "Run settings are fixed when a match starts. This control produces the exact CLI override for the next recorded run; it cannot alter this replay.",
-    );
     const commandRow = el("div", "setting-command");
     const command = el("code");
     const copy = el("button", "top-action", "Copy command");
@@ -462,10 +562,8 @@ export class Player {
       try {
         await navigator.clipboard.writeText(command.textContent ?? "");
         copy.textContent = "Copied";
-        setTimeout(() => (copy.textContent = "Copy command"), 1_200);
       } catch {
         window.getSelection()?.selectAllChildren(command);
-        copy.textContent = "Select and copy";
       }
     });
     update();
@@ -474,10 +572,19 @@ export class Player {
       closeForm,
       el("div", "eyebrow", "Run configuration"),
       el("h2", "", "Sub-agent lifecycle"),
-      recorded,
-      description,
+      el(
+        "p",
+        "setting-current",
+        recordedLimit > 0
+          ? `This replay: hard ${recordedLimit}-tick limit.`
+          : "This replay: task-driven lifecycle with no fixed limit.",
+      ),
+      el(
+        "p",
+        "meta",
+        "Workers own bounded assignments until verified completion or an unrecoverable blockage.",
+      ),
       controls,
-      note,
       commandRow,
     );
     dialog.addEventListener("click", (event) => {
@@ -500,21 +607,20 @@ export class Player {
       (typeof CHART_METRICS)[OutcomeMetric],
     ][]) {
       const button = el("button", key === this.chartMetric ? "on" : "", config.label);
-      button.type = "button";
       button.title = config.help;
       button.addEventListener("click", () => {
         this.chartMetric = key;
         for (const [metric, candidate] of this.chartMetricButtons)
           candidate.classList.toggle("on", metric === key);
+        this.chartRenderKey = "";
         this.drawOutcomeChart();
       });
       this.chartMetricButtons.set(key, button);
       metricControls.append(button);
     }
     heading.append(title, metricControls);
-
     const teamControls = el("div", "chart-teams");
-    this.cards.forEach((card, index) => {
+    this.cards.forEach((card) => {
       this.chartWorlds.add(card.world.id);
       const label = el("label");
       const checkbox = el("input") as HTMLInputElement;
@@ -523,17 +629,16 @@ export class Player {
       checkbox.addEventListener("change", () => {
         if (checkbox.checked) this.chartWorlds.add(card.world.id);
         else this.chartWorlds.delete(card.world.id);
+        this.chartRenderKey = "";
         this.drawOutcomeChart();
       });
       const swatch = el("i");
-      swatch.style.background = `var(${TEAM_COLOR_VARS[index % TEAM_COLOR_VARS.length]!})`;
+      swatch.style.background = card.color;
       label.append(checkbox, swatch, document.createTextNode(card.world.label));
       teamControls.append(label);
     });
-
     const plot = el("div", "chart-plot");
     this.chartCanvas = el("canvas");
-    this.chartCanvas.setAttribute("aria-label", "Team outcomes by tick");
     plot.append(this.chartCanvas);
     this.chartValues = el("div", "chart-values");
     section.append(heading, teamControls, plot, this.chartValues);
@@ -544,26 +649,158 @@ export class Player {
     const visible = this.focused ? [this.focused] : this.cards.filter((c) => c.visible);
     const n = Math.max(1, visible.length);
     const box = this.boardsEl.getBoundingClientRect();
-    const W = box.width;
-    const cardMinimum = W >= 1_600 ? 330 : W >= 900 ? 300 : 260;
-    const cols = this.focused ? 1 : Math.max(1, Math.min(n, Math.floor((W + 12) / (cardMinimum + 12))));
-    this.boardsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    const W = box.width - 24;
+    const H = box.height - 24;
+    const view = this.effectiveView();
+    const across = view === "both" ? 2 : 1;
+    const fit = (chrome: number) => {
+      let best = { cols: 1, size: 0 };
+      for (let cols = 1; cols <= n; cols++) {
+        const rows = Math.ceil(n / cols);
+        const size = Math.floor(
+          Math.min(
+            ((W - (cols - 1) * 12) / cols - (across - 1) * 8) / across,
+            (H - (rows - 1) * 12) / rows - chrome,
+          ),
+        );
+        // Prefer the squarer grid unless a wider one gives clearly bigger boards (it fills the screen better).
+        if (size > best.size * 1.05 || (best.size === 0 && size > 0)) best = { cols, size };
+      }
+      if (best.size < MIN_BOARD) {
+        // Too small for the readable minimum anyway: the grid that hides the least at that size.
+        const cardW = MIN_BOARD * across + (across - 1) * 8;
+        let least = Infinity;
+        for (let cols = 1; cols <= n; cols++) {
+          const rows = Math.ceil(n / cols);
+          const hidden =
+            Math.max(0, cols * cardW + (cols - 1) * 12 - W) +
+            Math.max(0, rows * (MIN_BOARD + chrome) + (rows - 1) * 12 - H);
+          if (hidden < least) [least, best] = [hidden, { cols, size: best.size }];
+        }
+      }
+      return best;
+    };
+    // Card header + counters + feed. Expanded feeds shrink every board so the page never scrolls;
+    // if the boards would drop below the readable minimum, the feeds give up lines first (SPEC §9.2).
+    let lines = this.expanded ? EXPANDED_LINES : COLLAPSED_LINES;
+    let best = fit(this.chromeHeight(lines));
+    while (this.expanded && lines > COLLAPSED_LINES && best.size < MIN_BOARD)
+      best = fit(this.chromeHeight(--lines));
+    for (const c of this.cards) c.feed.setLines(lines);
+    const size = Math.max(MIN_BOARD, best.size);
+    this.boardsEl.style.gridTemplateColumns = `repeat(${best.cols}, ${size * across + (across - 1) * 8}px)`;
     const dpr = window.devicePixelRatio || 1;
     for (const c of this.cards) {
-      const bounds = c.canvas.getBoundingClientRect();
-      const size = Math.max(1, Math.min(bounds.width, bounds.height));
-      const pixels = Math.round(size * dpr);
-      if (c.canvas.width !== pixels) c.canvas.width = pixels;
-      if (c.canvas.height !== pixels) c.canvas.height = pixels;
+      for (const cv of [c.canvas, c.graph]) {
+        cv.style.width = `${size}px`;
+        cv.style.height = `${size}px`;
+        cv.width = Math.round(size * dpr);
+        cv.height = Math.round(size * dpr);
+      }
+      c.canvas.parentElement!.style.display = view === "graph" ? "none" : "";
+      c.graph.style.display = view === "board" ? "none" : "";
     }
+    for (const c of this.cards) {
+      const r = c.spark.getBoundingClientRect();
+      c.spark.width = Math.round(r.width * dpr);
+      c.spark.height = Math.round(r.height * dpr);
+    }
+    const cr = this.chart.getBoundingClientRect();
+    this.chart.width = Math.round(cr.width * dpr);
+    this.chart.height = Math.round(cr.height * dpr);
     const r = this.scrubMarks.getBoundingClientRect();
     this.scrubMarks.width = Math.round(r.width * dpr);
     this.scrubMarks.height = Math.round(r.height * dpr);
+    this.chartRenderKey = "";
     this.drawOutcomeChart();
     this.lastVersion = -1;
   }
 
   private focused: Card | null = null;
+
+  private chromeHeight(lines: number): number {
+    const c = this.cards.find((x) => x.root.style.display !== "none") ?? this.cards[0];
+    const head = c?.root.querySelector<HTMLElement>(".card-head")?.offsetHeight || 42;
+    const counters = c?.counters.offsetHeight || 46;
+    const scorebar = c?.scorebar.offsetHeight || 44;
+    const outcomes = c?.outcomes.offsetHeight || 0;
+    const commentary = c?.commentary.offsetHeight || 0;
+    return head + scorebar + outcomes + counters + (c?.feed.heightFor(lines) || 90) + commentary + 4;
+  }
+
+  private effectiveView(): View {
+    return this.view ?? (this.focused ? "both" : "board");
+  }
+
+  private setView(v: View) {
+    this.view = v;
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("view", v);
+      history.replaceState(null, "", u);
+    } catch {
+      // file:// pages may refuse URL changes; the view still applies.
+    }
+    this.syncView();
+    this.layout();
+  }
+
+  private syncView() {
+    const v = this.effectiveView();
+    this.viewBtns.forEach((b, i) => b.classList.toggle("on", VIEWS[i] === v));
+    this.recentBtn.style.display = v === "board" ? "none" : "";
+  }
+
+  private setFeedMode(m: FeedMode) {
+    this.feedMode = m;
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("feed", m);
+      history.replaceState(null, "", u);
+    } catch {
+      // file:// pages may refuse URL changes; the mode still applies.
+    }
+    this.syncFeeds();
+  }
+
+  private syncFeeds() {
+    this.feedBtns.forEach((b, i) => b.classList.toggle("on", FEED_MODES[i] === this.feedMode));
+    for (const c of this.cards) c.feed.setMode(this.feedMode, this.hideDone);
+  }
+
+  /** Role icons for the card header, so the board reads without a key (SPEC §9.3). */
+  private legend(w: WorldTimeline): HTMLElement {
+    const box = el("div", "legend");
+    const ids =
+      w.team === "subagents"
+        ? ["scout", "ff1", "ff2", "engineer", "rescuer", HQ_ID]
+        : ["scout", "ff1", "ff2", "engineer", "rescuer"];
+    for (const id of ids) {
+      const img = agentIcon(id, 15);
+      img.title =
+        id === HQ_ID
+          ? "orchestrator (HQ)"
+          : id === "scout"
+            ? "scout"
+            : id.startsWith("ff")
+              ? `firefighter ${id}`
+              : id;
+      box.append(img);
+    }
+    return box;
+  }
+
+  private setExpanded(on: boolean) {
+    this.expanded = on;
+    for (const c of this.cards) c.feed.setExpanded(on);
+    this.expandBtn.textContent = on ? "collapse feeds" : "expand feeds";
+    this.layout();
+  }
+
+  private seek(t: number) {
+    this.t = t;
+    this.followLive = false;
+  }
 
   /** Presenter mode: show one board at full size (PLAN M9). */
   private toggleFocus(c: Card) {
@@ -572,6 +809,7 @@ export class Player {
       const show = this.focused ? x === this.focused : x.visible;
       x.root.style.display = show ? "" : "none";
     }
+    this.syncView();
     this.layout();
   }
 
@@ -603,26 +841,77 @@ export class Player {
     } else if (e.key === "ArrowRight") this.stepTick(1);
     else if (e.key === "ArrowLeft") this.stepTick(-1);
     else if (e.key >= "1" && e.key <= "5") this.setSpeed(SPEEDS[Number(e.key) - 1]!);
-    else if (e.key.toLowerCase() === "l" && !this.legend.open) this.legend.showModal();
+    else if (e.key.toLowerCase() === "l" && !this.legendDialog.open) this.legendDialog.showModal();
     else if (e.key === "Escape") this.closeInspector();
   }
 
-  private onClick(c: Card, e: MouseEvent) {
+  private hitAgent(c: Card, e: MouseEvent): string | null {
     const r = c.canvas.getBoundingClientRect();
     const dpr = c.canvas.width / r.width;
     const x = (e.clientX - r.left) * dpr;
     const y = (e.clientY - r.top) * dpr;
-    const hit = c.hits.find((h) => (h.x - x) ** 2 + (h.y - y) ** 2 <= h.r * h.r);
-    if (hit) {
-      this.selected = { world: c.world.id, agent: hit.id };
-      this.inspector.classList.add("open");
-      this.inspectorKey = "";
-      this.layout();
-    }
+    return c.hits.find((h) => (h.x - x) ** 2 + (h.y - y) ** 2 <= h.r * h.r)?.id ?? null;
+  }
+
+  private onClick(c: Card, e: MouseEvent) {
+    const hit = this.hitAgent(c, e);
+    if (hit) this.select(c, hit);
+  }
+
+  /** Inspect an agent; with `llmId`, pin that decision instead of following the latest (SPEC §9.4). */
+  private select(c: Card, agent: string, llmId: string | null = null) {
+    const wasOpen = this.inspector.classList.contains("open");
+    this.selected = { world: c.world.id, agent, pin: llmId };
+    this.scoreLog = null;
+    this.inspector.classList.add("open");
+    this.inspectorKey = "";
+    if (!wasOpen) this.layout();
+  }
+
+  private openScoreLog(c: Card) {
+    const wasOpen = this.inspector.classList.contains("open");
+    this.scoreLog = c.world.id;
+    this.selected = null;
+    this.inspector.classList.add("open");
+    this.inspectorKey = "";
+    if (!wasOpen) this.layout();
+  }
+
+  private graphPoint(c: Card, e: MouseEvent) {
+    const r = c.graph.getBoundingClientRect();
+    const dpr = c.graph.width / r.width;
+    return {
+      x: (e.clientX - r.left) * dpr,
+      y: (e.clientY - r.top) * dpr,
+      dpr,
+      cx: e.clientX - r.left,
+      cy: e.clientY - r.top,
+    };
+  }
+
+  /** Click a node to inspect it, or an edge to filter the feed to that pair (SPEC §9.1). */
+  private onGraphClick(c: Card, e: MouseEvent) {
+    const p = this.graphPoint(c, e);
+    const hit = hitGraph(c.graphHits, p.x, p.y, 6 * p.dpr);
+    if (hit.node) this.select(c, hit.node);
+    else if (hit.edge) c.feed.setFilter(splitEdge(hit.edge));
+  }
+
+  private onGraphHover(c: Card, e: MouseEvent) {
+    const p = this.graphPoint(c, e);
+    const hit = hitGraph(c.graphHits, p.x, p.y, 6 * p.dpr);
+    c.hoverEdge = hit.edge ?? null;
+    c.graph.style.cursor = hit.node || hit.edge ? "pointer" : "default";
+    c.tooltip.style.display = c.hoverEdge ? "block" : "none";
+    const wrap = c.graph.getBoundingClientRect();
+    const box = c.graph.parentElement!.getBoundingClientRect();
+    c.tooltip.style.left = `${wrap.left - box.left + p.cx + 12}px`;
+    c.tooltip.style.top = `${wrap.top - box.top + p.cy + 12}px`;
   }
 
   private closeInspector() {
     this.selected = null;
+    this.scoreLog = null;
     this.inspector.classList.remove("open");
     this.layout();
   }
@@ -632,8 +921,7 @@ export class Player {
     this.lastFrame = now;
     const dur = this.tl.durationMs;
     if (this.o.mode === "live" && this.followLive && this.liveOffset !== null) {
-      const liveEnd = this.tl.end ? dur : this.tl.lastMs + this.tl.tickMs;
-      this.t = Math.min(now - this.liveOffset, liveEnd);
+      this.t = Math.min(now - this.liveOffset, this.tl.lastMs + this.tl.tickMs);
     } else if (this.playing) {
       this.t = Math.min(dur, this.t + dt * this.speed);
       if (this.o.mode === "replay" && this.t >= dur) this.playing = false;
@@ -655,8 +943,37 @@ export class Player {
     let leader: Card | null = null;
     let leaderScore = -Infinity;
     let tickShown = 0;
-    for (const c of this.cards) {
-      if (!c.visible || (this.focused && c !== this.focused)) continue;
+    const shown = this.cards.filter((c) => c.visible && (!this.focused || c === this.focused));
+    const view = this.effectiveView();
+    // One weight scale for every graph on screen, so the same width means the same traffic (SPEC §9.1).
+    const edges = new Map<Card, Edges>();
+    let maxEdge = 0;
+    let maxNode = 0;
+    if (view !== "board") {
+      for (const c of shown) {
+        const e = this.tl.edgesAt(c.world, t, this.recent ? RECENT_TICKS * this.tl.tickMs : undefined);
+        edges.set(c, e);
+        for (const n of e.values()) maxEdge = Math.max(maxEdge, n);
+        for (const n of nodeTraffic(e).values()) maxNode = Math.max(maxNode, n);
+      }
+    }
+    for (const c of shown) {
+      c.feed.update(t);
+      const e = edges.get(c);
+      if (e) this.renderGraph(c, e, t, maxEdge, maxNode, holdMs);
+      if (view === "graph") {
+        const f = this.tl.frameAt(c.world, t);
+        if (f) tickShown = Math.max(tickShown, f.tick);
+        this.renderStats(c, t, f?.tick ?? 0);
+        if (f) this.renderMissionStats(c, f.cur.score, f.cur.fires.length);
+        this.renderCommentary(c, t);
+        const score = f?.cur.score.total ?? 0;
+        if (f && score > leaderScore) {
+          leaderScore = score;
+          leader = c;
+        }
+        continue;
+      }
       const f = this.tl.frameAt(c.world, t);
       const ctx = c.canvas.getContext("2d")!;
       ctx.fillStyle = "#11131c";
@@ -677,117 +994,27 @@ export class Player {
           messages: this.tl.activeMessages(c.world, t, holdMs),
           holdMs,
           selected: this.selected?.world === c.world.id ? this.selected.agent : null,
+          hover: c.hoverAgent,
           showHq: c.world.team === "subagents",
+          orderLines: this.orderLines,
+          popups: this.popups(c.world, t),
         },
       );
       const score = f.cur.score.total;
-      c.score.textContent = String(score);
       if (score > leaderScore) {
         leaderScore = score;
         leader = c;
       }
-      const k = this.tl.counters(c.world, t, f.tick);
-      const counter = (v: string | number, label: string, title = "") =>
-        `<div class="counter"${title ? ` title="${title}"` : ""}><b>${v}</b><span>${label}</span></div>`;
-      const outcome = f.cur.score;
-      const missionStat = (v: number, label: string, tone: "good" | "bad" | "neutral", title: string) =>
-        `<div class="outcome ${tone}" title="${title}"><b>${v}</b><span>${label}</span></div>`;
-      const missionPair = (first: string, second: string) =>
-        `<div class="outcome-pair">${first}${second}</div>`;
-      c.outcomes.innerHTML =
-        missionPair(
-          missionStat(
-            outcome.evacuated,
-            `saved +${outcome.evacuated * 10}`,
-            "good",
-            "Civilians evacuated: 10 points each.",
-          ),
-          missionStat(
-            outcome.lost,
-            `lost −${outcome.lost * 20}`,
-            "bad",
-            "Civilians lost: minus 20 points each.",
-          ),
-        ) +
-        missionPair(
-          missionStat(
-            outcome.extinguished,
-            `fires out +${outcome.extinguished}`,
-            "good",
-            "Fire tiles extinguished: 1 point each.",
-          ),
-          missionStat(
-            f.cur.fires.length,
-            "fires active",
-            f.cur.fires.length ? "bad" : "good",
-            "Fire tiles currently burning. This is not directly scored.",
-          ),
-        ) +
-        missionPair(
-          missionStat(
-            outcome.houses_standing,
-            `standing +${outcome.houses_standing * 5}`,
-            "good",
-            "Houses still standing: 5 points each at match end.",
-          ),
-          missionStat(
-            outcome.houses_destroyed,
-            "destroyed",
-            outcome.houses_destroyed ? "bad" : "neutral",
-            "Houses destroyed. Each one removes the opportunity to earn 5 end-of-match points.",
-          ),
-        );
-      c.counters.innerHTML =
-        counter(`$${k.cost.toFixed(2)}`, "cost") +
-        counter(k.calls, "LLM calls") +
-        counter(k.messages, "messages") +
-        counter(k.stale, "stale actions") +
-        counter(k.idle, "idle agent-ticks") +
-        counter(
-          k.joint,
-          "uncovered I3",
-          "Intensity-3 fire-ticks without both firefighters assigned to that same target. Lower is better.",
-        );
-      const recent = this.tl.recentMessages(c.world, t, 3);
-      c.messageBody.innerHTML = recent.length
-        ? recent
-            .map(
-              (m) =>
-                `<div><b>${esc(m.from)}</b> → ${esc(m.to.join(", ") || m.channel)}: ${esc(m.text)}</div>`,
-            )
-            .join("")
-        : `<div>${c.world.team.startsWith("none") || c.world.team === "perfect" ? "no messages on this team" : "no messages yet"}</div>`;
-      const commentary = this.tl.commentaryAt(c.world, t);
-      const body = c.commentary.querySelector(".commentary-body")!;
-      const status = c.commentary.querySelector(".commentary-status")!;
-      if (commentary) {
-        const model = c.world.commentary.at(-1)?.model;
-        status.textContent = model ?? "omniscient replay commentary";
-        status.setAttribute(
-          "title",
-          model ? `Commentary generated by ${model}` : "Omniscient replay commentary",
-        );
-        body.className = "commentary-body";
-        body.innerHTML = commentary.commentary
-          .split(/\n\s*\n/)
-          .filter(Boolean)
-          .map((paragraph) => `<p>${esc(paragraph.trim())}</p>`)
-          .join("");
-      } else {
-        status.textContent = "post-match observer";
-        body.className = "commentary-body meta";
-        body.textContent =
-          this.o.commentaryError ??
-          (this.o.mode === "live"
-            ? "The broadcast is generated after the outcome is fixed, then saved with the replay."
-            : "No broadcast checkpoint yet.");
-      }
+      this.renderStats(c, t, f.tick);
+      this.renderMissionStats(c, f.cur.score, f.cur.fires.length);
+      this.renderCommentary(c, t);
       const ended =
         f.cur.ended && f.tick === this.tl.maxTick(c.world) && t >= this.tl.tickTime(c.world, f.tick);
       c.results.style.display = ended ? "flex" : "none";
-      if (ended) c.results.innerHTML = `<div>${score} pts</div>`;
+      if (ended) this.renderResults(c, f.cur.score);
     }
     for (const c of this.cards) c.root.classList.toggle("leader", c === leader && this.cards.length > 1);
+    this.renderChart(shown, t);
     const secs = (t / 1000).toFixed(1);
     this.clockEl.textContent = `tick ${tickShown} / ${this.tl.header.ticks} · ${secs}s · ${this.speed}×`;
     this.drawMarks();
@@ -795,151 +1022,401 @@ export class Player {
     this.renderInspector(t);
   }
 
+  /** Score and counters under a card (SPEC §9). */
+  private renderStats(c: Card, t: number, tick: number) {
+    const f = this.tl.frameAt(c.world, t);
+    const total = f?.cur.score.total ?? 0;
+    c.score.textContent = String(total);
+    if (c.lastScore !== null && total !== c.lastScore) {
+      c.score.classList.remove("flash-up", "flash-down");
+      void c.score.offsetWidth; // restart the animation
+      c.score.classList.add(total > c.lastScore ? "flash-up" : "flash-down");
+    }
+    c.lastScore = total;
+    if (f) this.renderBreakdown(c, f.cur.score);
+    this.renderSpark(c, t, tick);
+    const k = this.tl.counters(c.world, t, tick);
+    const counter = (v: string | number, label: string) =>
+      `<div class="counter"><b>${v}</b><span>${label}</span></div>`;
+    c.counters.innerHTML =
+      counter(`$${k.cost.toFixed(2)}`, "cost") +
+      counter(k.calls, "LLM calls") +
+      counter(k.messages, "messages") +
+      counter(k.stale, "stale actions") +
+      counter(k.idle, "idle agent-ticks") +
+      counter(k.joint, "uncovered I3");
+  }
+
+  private renderMissionStats(c: Card, outcome: Score, activeFires: number) {
+    const stat = (value: number, label: string, tone: "good" | "bad" | "neutral", title: string) =>
+      `<div class="outcome ${tone}" title="${title}"><b>${value}</b><span>${label}</span></div>`;
+    const pair = (a: string, b: string) => `<div class="outcome-pair">${a}${b}</div>`;
+    c.outcomes.innerHTML =
+      pair(
+        stat(
+          outcome.evacuated,
+          `saved +${outcome.evacuated * 10}`,
+          "good",
+          "Civilians evacuated: 10 points each.",
+        ),
+        stat(outcome.lost, `lost −${outcome.lost * 20}`, "bad", "Civilians lost: minus 20 points each."),
+      ) +
+      pair(
+        stat(
+          outcome.extinguished,
+          `fires out +${outcome.extinguished}`,
+          "good",
+          "Fire tiles extinguished: 1 point each.",
+        ),
+        stat(activeFires, "fires active", activeFires ? "bad" : "good", "Fire tiles currently burning."),
+      ) +
+      pair(
+        stat(
+          outcome.houses_standing,
+          `standing +${outcome.houses_standing * 5}`,
+          "good",
+          "Houses standing: 5 points each.",
+        ),
+        stat(
+          outcome.houses_destroyed,
+          "destroyed",
+          outcome.houses_destroyed ? "bad" : "neutral",
+          "Houses destroyed.",
+        ),
+      );
+  }
+
+  private renderCommentary(c: Card, t: number) {
+    const commentary = this.tl.commentaryAt(c.world, t);
+    const body = c.commentary.querySelector<HTMLElement>(".commentary-body")!;
+    const status = c.commentary.querySelector<HTMLElement>(".commentary-status")!;
+    if (commentary) {
+      const model = c.world.commentary.at(-1)?.model;
+      status.textContent = model ?? "omniscient replay commentary";
+      body.className = "commentary-body";
+      body.replaceChildren();
+      for (const paragraph of commentary.commentary.split(/\n\s*\n/).filter(Boolean))
+        body.append(el("p", "", paragraph.trim()));
+    } else {
+      status.textContent = "post-match observer";
+      body.className = "commentary-body meta";
+      body.textContent =
+        this.o.commentaryError ??
+        (this.o.mode === "live"
+          ? "The broadcast is generated after the outcome is fixed, then saved with the replay."
+          : "No broadcast checkpoint yet.");
+    }
+  }
+
+  /** Four chips that add up to the score, and the starting score (SPEC §9.5). */
+  private renderBreakdown(c: Card, s: Score) {
+    const key = `${s.houses_standing}|${s.evacuated}|${s.lost}|${s.extinguished}|${s.total}`;
+    if (key === c.chipsKey) return;
+    c.chipsKey = key;
+    c.chips.replaceChildren(...this.scoreChips(c.world, s));
+    const houses = c.world.startHouses || s.houses_standing + s.houses_destroyed;
+    c.started.textContent = `started at ${c.world.startScore} (${houses} houses)`;
+    c.started.title = STARTED_TITLE;
+  }
+
+  /** The four chips that add up to the total, and the total (SPEC §9.5). */
+  private scoreChips(w: WorldTimeline, s: Score): HTMLElement[] {
+    const chip = (icon: IconName, n: number, per: number, title: string) => {
+      const d = el("span", `chip${n ? "" : " zero"}${per < 0 && n ? " loss" : ""}`);
+      d.title = title;
+      d.append(
+        iconImg(icon, 13, {
+          fg: icon === "lost" ? "#ff4d6d" : icon === "fire" ? "#ff9f43" : "#e8e9f0",
+          title,
+        }),
+      );
+      const v = n * per;
+      d.append(
+        document.createTextNode(
+          ` ${n}×${per < 0 ? "−" : ""}${Math.abs(per)} = ${v < 0 ? "−" : ""}${Math.abs(v)}`,
+        ),
+      );
+      return d;
+    };
+    const houses = w.startHouses || s.houses_standing + s.houses_destroyed;
+    return [
+      chip(
+        "house",
+        s.houses_standing,
+        5,
+        `+5 for each house still standing: ${houses} at the start, ${s.houses_destroyed} destroyed`,
+      ),
+      chip(
+        "civilian",
+        s.evacuated,
+        10,
+        `+10 for each civilian evacuated by the rescuer: ${s.evacuated} so far`,
+      ),
+      chip("lost", s.lost, -20, `−20 for each civilian lost to fire or a missed deadline: ${s.lost} so far`),
+      chip("fire", s.extinguished, 1, `+1 for each fire tile put out: ${s.extinguished} so far`),
+      el("b", "chip-total", `= ${s.total}`),
+    ];
+  }
+
+  /** Scoring events to float up from their tile during about a tick of match time (SPEC §9.5). */
+  private popups(w: WorldTimeline, t: number): { entry: ScoreEntry; age: number }[] {
+    const out: { entry: ScoreEntry; age: number }[] = [];
+    const life = this.tl.tickMs;
+    for (let i = w.score.length - 1; i >= 0; i--) {
+      const e = w.score[i]!;
+      if (e.t_ms > t) continue;
+      if (t - e.t_ms >= life) break;
+      out.push({ entry: e, age: (t - e.t_ms) / life });
+    }
+    return out;
+  }
+
+  /** Scores per tick for a world, up to the tick shown. */
+  private scoresUpTo(w: WorldTimeline, tick: number): number[] {
+    const out: number[] = [];
+    for (let i = 0; i <= tick && i < w.ticks.length; i++) {
+      const f = w.ticks[i];
+      out.push(f ? f.state.score.total : (out.at(-1) ?? w.startScore));
+    }
+    return out;
+  }
+
+  private range = { version: -1, min: 0, max: 0 };
+
+  /** Shared y range of every score chart, recomputed only when frames arrive. */
+  private scoreRange(ws: WorldTimeline[]): { min: number; max: number } {
+    if (this.range.version === this.tl.version) return this.range;
+    let min = 0;
+    let max = 0;
+    for (const w of ws)
+      for (const f of w.ticks) {
+        if (!f) continue;
+        min = Math.min(min, f.state.score.total);
+        max = Math.max(max, f.state.score.total);
+      }
+    this.range = { version: this.tl.version, min, max: Math.max(max, min + 10) };
+    return this.range;
+  }
+
+  private renderSpark(c: Card, t: number, tick: number) {
+    if (!c.spark.width) return;
+    const dpr = c.spark.width / Math.max(1, c.spark.clientWidth);
+    const range = this.scoreRange(this.cards.map((x) => x.world));
+    const f = this.tl.frameAt(c.world, t);
+    drawChart(c.spark, {
+      lines: [
+        { color: c.color, scores: this.scoresUpTo(c.world, tick), events: this.tl.scoreLogAt(c.world, t) },
+      ],
+      ticks: this.tl.header.ticks,
+      ...range,
+      at: tick + (f?.alpha ?? 0),
+      dpr,
+    });
+  }
+
+  /** The shared all-teams chart in the controls: where the teams diverged (SPEC §9.5). */
+  private renderChart(shown: Card[], t: number) {
+    if (!this.chart.width || this.tl.worlds.size < 2) return;
+    const dpr = this.chart.width / Math.max(1, this.chart.clientWidth);
+    const range = this.scoreRange(this.cards.map((x) => x.world));
+    let at = 0;
+    const lines = shown.map((c) => {
+      const f = this.tl.frameAt(c.world, t);
+      at = Math.max(at, (f?.tick ?? 0) + (f?.alpha ?? 0));
+      return { color: c.color, scores: this.scoresUpTo(c.world, f?.tick ?? 0) };
+    });
+    drawChart(this.chart, { lines, ticks: this.tl.header.ticks, ...range, at, dpr });
+  }
+
   private drawOutcomeChart() {
     if (!this.chartCanvas || !this.chartValues) return;
     const rect = this.chartCanvas.getBoundingClientRect();
     if (rect.width < 10 || rect.height < 10) return;
     const dpr = window.devicePixelRatio || 1;
-    const pixelWidth = Math.round(rect.width * dpr);
-    const pixelHeight = Math.round(rect.height * dpr);
-    if (this.chartCanvas.width !== pixelWidth || this.chartCanvas.height !== pixelHeight) {
-      this.chartCanvas.width = pixelWidth;
-      this.chartCanvas.height = pixelHeight;
-    }
-    const ctx = this.chartCanvas.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const width = rect.width;
-    const height = rect.height;
-    const styles = getComputedStyle(document.documentElement);
-    const color = (name: string) => styles.getPropertyValue(name).trim();
-    const muted = color("--muted");
-    const grid = color("--chart-grid");
-    const zero = color("--chart-zero");
-    const playhead = color("--chart-playhead");
-    const pointRing = color("--chart-point-ring");
-    const teamColors = TEAM_COLOR_VARS.map(color);
-
-    const selected = this.cards
-      .map((card, index) => ({ card, index }))
-      .filter(({ card }) => this.chartWorlds.has(card.world.id));
-    const reference = selected[0]?.card.world;
-    const currentTick = reference ? (this.tl.frameAt(reference, this.t)?.tick ?? 0) : 0;
-    const renderKey = [
-      this.tl.version,
-      this.chartMetric,
-      [...this.chartWorlds].join(","),
-      currentTick,
-      pixelWidth,
-      pixelHeight,
-      document.documentElement.dataset.theme,
-    ].join("|");
-    if (renderKey === this.chartRenderKey) return;
-    this.chartRenderKey = renderKey;
-    ctx.clearRect(0, 0, width, height);
-    const series = selected.map(({ card, index }) => ({
+    const width = Math.round(rect.width * dpr);
+    const height = Math.round(rect.height * dpr);
+    if (this.chartCanvas.width !== width) this.chartCanvas.width = width;
+    if (this.chartCanvas.height !== height) this.chartCanvas.height = height;
+    const selected = this.cards.filter((card) => this.chartWorlds.has(card.world.id));
+    const reference = selected[0]?.world;
+    const frame = reference ? this.tl.frameAt(reference, this.t) : null;
+    const tick = frame?.tick ?? 0;
+    const key = `${this.tl.version}|${this.chartMetric}|${[...this.chartWorlds].join(",")}|${tick}|${width}|${height}|${document.documentElement.dataset.theme}`;
+    if (key === this.chartRenderKey) return;
+    this.chartRenderKey = key;
+    const rows = selected.map((card) => ({
       card,
-      color: teamColors[index % teamColors.length]!,
-      points: this.tl.outcomeSeries(card.world, this.chartMetric),
+      values: this.tl.outcomeSeries(card.world, this.chartMetric).map((point) => point.value),
     }));
-    const allValues = series.flatMap((item) => item.points.map((point) => point.value));
-    if (!allValues.length) {
-      ctx.fillStyle = muted;
-      ctx.font = "13px system-ui";
-      ctx.fillText("Select at least one communication style.", 18, 30);
-      this.chartValues.replaceChildren();
+    const values = rows.flatMap((row) => row.values);
+    if (!values.length) {
+      this.chartCanvas.getContext("2d")!.clearRect(0, 0, width, height);
+      this.chartValues.textContent = "Select at least one communication style.";
       return;
     }
-
-    const margin = { left: 52, right: 18, top: 16, bottom: 30 };
-    const plotWidth = Math.max(1, width - margin.left - margin.right);
-    const plotHeight = Math.max(1, height - margin.top - margin.bottom);
-    const maxTick = Math.max(
-      this.tl.header.ticks,
-      ...series.flatMap((item) => item.points.map((p) => p.tick)),
-    );
-    let minValue = Math.min(0, ...allValues);
-    let maxValue = Math.max(0, ...allValues);
-    if (minValue === maxValue) maxValue = minValue + 1;
-    const padding = Math.max(1, (maxValue - minValue) * 0.06);
-    if (minValue < 0) minValue -= padding;
-    maxValue += padding;
-    const x = (tick: number) => margin.left + (tick / Math.max(1, maxTick)) * plotWidth;
-    const y = (value: number) => margin.top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
-
-    ctx.font = "11px system-ui";
-    ctx.textAlign = "right";
-    ctx.textBaseline = "middle";
-    for (let i = 0; i <= 4; i++) {
-      const value = minValue + ((maxValue - minValue) * i) / 4;
-      const py = y(value);
-      ctx.strokeStyle = value === 0 ? zero : grid;
-      ctx.lineWidth = value === 0 ? 1.4 : 1;
-      ctx.beginPath();
-      ctx.moveTo(margin.left, py);
-      ctx.lineTo(width - margin.right, py);
-      ctx.stroke();
-      ctx.fillStyle = muted;
-      const label = Math.abs(maxValue - minValue) < 8 ? Number(value.toFixed(1)) : Math.round(value);
-      ctx.fillText(String(label), margin.left - 8, py);
-    }
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    for (let i = 0; i <= 4; i++) {
-      const tick = Math.round((maxTick * i) / 4);
-      ctx.fillStyle = muted;
-      ctx.fillText(String(tick), x(tick), height - margin.bottom + 8);
-    }
-    ctx.textAlign = "right";
-    ctx.fillText("tick", width - margin.right, height - 13);
-
-    for (const item of series) {
-      if (!item.points.length) continue;
-      ctx.strokeStyle = item.color;
-      ctx.lineWidth = 2.5;
-      ctx.lineJoin = "round";
-      ctx.beginPath();
-      item.points.forEach((point, index) => {
-        if (index === 0) ctx.moveTo(x(point.tick), y(point.value));
-        else ctx.lineTo(x(point.tick), y(point.value));
-      });
-      ctx.stroke();
-    }
-
-    const playheadX = x(currentTick);
-    ctx.strokeStyle = playhead;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(playheadX, margin.top);
-    ctx.lineTo(playheadX, height - margin.bottom);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
+    let min = Math.min(0, ...values);
+    let max = Math.max(0, ...values);
+    if (min === max) max = min + 1;
+    const pad = Math.max(1, (max - min) * 0.06);
+    if (min < 0) min -= pad;
+    max += pad;
+    drawChart(this.chartCanvas, {
+      lines: rows.map(({ card, values: scores }) => ({ color: card.color, scores })),
+      ticks: this.tl.header.ticks,
+      min,
+      max,
+      at: tick + (frame?.alpha ?? 0),
+      dpr,
+    });
     const metric = CHART_METRICS[this.chartMetric];
-    this.chartValues.replaceChildren();
-    this.chartValues.append(
+    this.chartValues.replaceChildren(
       el(
         "span",
         `chart-direction ${metric.better}`,
         metric.better === "high" ? "Higher is better" : "Lower is better",
       ),
     );
-    for (const item of series) {
-      const snapshot = this.tl.outcomesAt(item.card.world, this.t);
+    for (const { card } of rows) {
+      const snapshot = this.tl.outcomesAt(card.world, this.t);
       if (!snapshot) continue;
       const chip = el("span", "chart-value");
       const swatch = el("i");
-      swatch.style.background = item.color;
-      const value = snapshot[this.chartMetric];
-      chip.append(swatch, document.createTextNode(`${item.card.world.label}: ${value}`));
+      swatch.style.background = card.color;
+      chip.append(swatch, document.createTextNode(`${card.world.label}: ${snapshot[this.chartMetric]}`));
       this.chartValues.append(chip);
-      ctx.fillStyle = item.color;
-      ctx.beginPath();
-      ctx.arc(playheadX, y(value), 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = pointRing;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+    }
+  }
+
+  private tickAtX(cv: HTMLCanvasElement, e: MouseEvent): number {
+    const r = cv.getBoundingClientRect();
+    const pad = 3;
+    const f = (e.clientX - r.left - pad) / Math.max(1, r.width - 2 * pad);
+    return Math.max(0, Math.min(this.tl.header.ticks, Math.round(f * this.tl.header.ticks)));
+  }
+
+  private onSparkHover(c: Card, e: MouseEvent) {
+    const tick = this.tickAtX(c.spark, e);
+    const log = this.tl.scoreLogAt(c.world, this.t);
+    let best: ScoreEntry | null = null;
+    for (const x of log) if (!best || Math.abs(x.tick - tick) < Math.abs(best.tick - tick)) best = x;
+    const score = c.world.ticks[Math.min(tick, c.world.ticks.length - 1)]?.state.score.total;
+    c.spark.title =
+      best && Math.abs(best.tick - tick) <= 1
+        ? `t${best.tick} ${best.text} ${fmtDelta(best.delta)} → ${best.total}`
+        : score !== undefined
+          ? `t${tick}: ${score}`
+          : "";
+  }
+
+  private onChartHover(e: MouseEvent) {
+    const tick = this.tickAtX(this.chart, e);
+    const parts = this.cards
+      .filter((c) => c.visible)
+      .map(
+        (c) =>
+          `${c.world.label} ${c.world.ticks[Math.min(tick, c.world.ticks.length - 1)]?.state.score.total ?? "–"}`,
+      );
+    this.chart.title = `t${tick}: ${parts.join(" · ")}`;
+  }
+
+  /** End of match: the final score and the chips that explain it (SPEC §9.5). */
+  private renderResults(c: Card, s: Score) {
+    const key = `${s.houses_standing}|${s.evacuated}|${s.lost}|${s.extinguished}|${s.total}`;
+    if (key === c.resultsKey) return;
+    c.resultsKey = key;
+    const box = el("div", "result-box");
+    const houses = c.world.startHouses || s.houses_standing + s.houses_destroyed;
+    // One line per category: points gained in green, lost in red, nothing in muted.
+    const rows = el("div", "result-rows");
+    const row = (icon: IconName, label: string, n: number, per: number, title: string) => {
+      const v = n * per;
+      const r = el("div", `result-row${v > 0 ? " good" : v < 0 ? " bad" : " zero"}`);
+      r.title = title;
+      r.append(
+        iconImg(icon, 18, {
+          fg: icon === "lost" ? "#ff4d6d" : icon === "fire" ? "#ff9f43" : "#e8e9f0",
+          title,
+        }),
+        el("span", "result-label", label),
+        el("span", "result-calc", `${n} × ${per < 0 ? "−" : ""}${Math.abs(per)}`),
+        el("b", "result-pts", `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v)}`),
+      );
+      rows.append(r);
+    };
+    row(
+      "house",
+      "houses standing",
+      s.houses_standing,
+      5,
+      `+5 for each house still standing: ${houses} at the start, ${s.houses_destroyed} destroyed`,
+    );
+    row("civilian", "civilians evacuated", s.evacuated, 10, "+10 for each civilian evacuated by the rescuer");
+    row("lost", "civilians lost", s.lost, -20, "−20 for each civilian lost to fire or a missed deadline");
+    row("fire", "fires put out", s.extinguished, 1, "+1 for each fire tile put out");
+    const total = el("div", "result-row result-total");
+    total.append(
+      el("span"),
+      el("span", "result-label", "total"),
+      el("span"),
+      el("b", "result-pts", String(s.total)),
+    );
+    rows.append(total);
+    const started = el("div", "result-started", `started at ${c.world.startScore} (${houses} houses)`);
+    started.title = STARTED_TITLE;
+    box.append(el("b", "", `${s.total} pts`), rows, started);
+    c.results.replaceChildren(box);
+  }
+
+  private graphNodes = new Map<string, GraphNode[]>();
+
+  /** The team's agents, plus HQ for the sub-agent team (SPEC §9.1). */
+  private nodesOf(w: WorldTimeline): GraphNode[] {
+    let nodes = this.graphNodes.get(w.id);
+    if (!nodes) {
+      const first = w.ticks.find(Boolean);
+      if (!first) return [];
+      nodes = first.state.agents.map((a) => ({ id: a.id, role: a.role }));
+      if (w.team === "subagents") nodes.push({ id: HQ_ID, role: null });
+      this.graphNodes.set(w.id, nodes);
+    }
+    return nodes;
+  }
+
+  private renderGraph(c: Card, edges: Edges, t: number, maxEdge: number, maxNode: number, holdMs: number) {
+    const flash = new Map<string, number>();
+    for (let i = c.world.messages.length - 1; i >= 0; i--) {
+      const m = c.world.messages[i]!;
+      if (m.t_ms > t) continue;
+      if (t - m.t_ms > holdMs) break;
+      for (const r of m.to) {
+        const k = edgeKey(m.from, r);
+        flash.set(k, Math.max(flash.get(k) ?? 0, 1 - (t - m.t_ms) / holdMs));
+      }
+    }
+    const dpr = c.graph.width / Math.max(1, c.graph.clientWidth);
+    const empty = edges.size === 0;
+    c.graphHits = drawGraph(c.graph.getContext("2d")!, c.graph.width, dpr, {
+      nodes: this.nodesOf(c.world),
+      edges,
+      maxEdge,
+      maxNode,
+      flash,
+      hover: c.hoverEdge,
+      selected: this.selected?.world === c.world.id ? this.selected.agent : null,
+      note: empty
+        ? silent(c.world.team)
+          ? "no messages on this team"
+          : this.recent
+            ? `no messages in the last ${RECENT_TICKS} ticks`
+            : "no messages yet"
+        : null,
+      legend: this.recent ? `last ${RECENT_TICKS} ticks, all teams` : "all teams",
+    });
+    if (c.hoverEdge) {
+      const [a, b] = splitEdge(c.hoverEdge);
+      const n = edges.get(c.hoverEdge) ?? 0;
+      const back = edges.get(edgeKey(b, a)) ?? 0;
+      c.tooltip.textContent = `${a} → ${b}: ${n} message${n === 1 ? "" : "s"} · ${b} → ${a}: ${back}`;
     }
   }
 
@@ -952,14 +1429,13 @@ export class Player {
     const dur = Math.max(1, this.tl.durationMs);
     const visible = this.cards.filter((card) => card.visible && (!this.focused || card === this.focused));
     this.timelineTeamKey.replaceChildren(el("span", "", "Event rows, top → bottom:"));
-    visible.forEach((card) => {
+    for (const card of visible) {
       const item = el("span");
       const swatch = el("i");
-      const index = this.cards.indexOf(card) % TEAM_COLOR_VARS.length;
-      swatch.style.background = `var(${TEAM_COLOR_VARS[index]!})`;
+      swatch.style.background = card.color;
       item.append(swatch, document.createTextNode(card.world.label));
       this.timelineTeamKey.append(item);
-    });
+    }
     const laneHeight = cv.height / Math.max(1, visible.length);
     for (const m of this.tl.markers()) {
       if (m.t > dur) continue;
@@ -970,18 +1446,23 @@ export class Player {
       if (m.global) ctx.fillRect(x - 1, 0, 2, cv.height);
       else ctx.fillRect(x - 1, lane * laneHeight, 2, Math.max(2, laneHeight - 1));
     }
-    cv.title =
-      "Team-specific outcomes use the labelled rows below. Shared wind and bridge events span every row.";
+    cv.title = "Team-specific outcomes use the labelled rows. Shared wind and bridge events span all rows.";
   }
 
   private renderInspector(t: number) {
+    if (this.scoreLog) return this.renderScoreLog(t);
     if (!this.selected) return;
     const w = this.tl.worlds.get(this.selected.world)!;
+    const card = this.cards.find((c) => c.world === w)!;
     const f = this.tl.frameAt(w, t);
     const agentId = this.selected.agent;
-    const call = this.tl.lastLlmCall(w, agentId, t);
+    const decisions = this.tl.decisionsOf(w, agentId);
+    const pinned = this.selected.pin ? decisions.findIndex((d) => d.id === this.selected!.pin) : -1;
+    const idx = pinned >= 0 ? pinned : this.tl.decisionIndexAt(w, agentId, t);
+    const call = decisions[idx] ?? null;
     const inFlight = this.tl.inFlightLlmCall(w, agentId, t);
-    const key = `${agentId}|${f?.tick}|${call?.id}|${inFlight?.id}|${inFlight ? Math.floor(t / 1000) : ""}`;
+    const points = this.tl.pointsAt(w, t);
+    const key = `${agentId}|${f?.tick}|${call?.id}|${inFlight?.id}|${pinned}|${card.feed.filteredAgent}|${points.agents.get(agentId)?.points}`;
     if (key === this.inspectorKey) return;
     this.inspectorKey = key;
     const a = f?.cur.agents.find((x) => x.id === agentId);
@@ -989,7 +1470,21 @@ export class Player {
     box.replaceChildren();
     const close = el("button", "close", "×");
     close.addEventListener("click", () => this.closeInspector());
-    box.append(close, el("h3", "", `${agentId} · ${w.label}`));
+    const h = el("h3");
+    h.append(agentIcon(agentId, 20), document.createTextNode(` ${agentId} · ${w.label}`));
+    box.append(close, h);
+    const only = el(
+      "button",
+      "inline-btn",
+      card.feed.filteredAgent === agentId
+        ? "show every agent in the feed"
+        : "show only this agent in the feed",
+    );
+    only.addEventListener("click", () => {
+      card.feed.setAgent(card.feed.filteredAgent === agentId ? null : agentId);
+      this.inspectorKey = "";
+    });
+    box.append(only);
     if (a) {
       const kv = el("div", "kv");
       const row = (k: string, v: string) => kv.append(el("span", "", k), el("span", "", v));
@@ -999,6 +1494,7 @@ export class Player {
         "order",
         `${formatOrder(a.order) ?? "none"} · ${a.order_status}${a.block_reason ? ` (${a.block_reason})` : ""}`,
       );
+      if (a.block_detail && a.order_status === "blocked") row("blocked by", a.block_detail);
       if (a.role === "firefighter") row("water", String(a.water));
       box.append(kv);
     } else if (agentId === HQ_ID) {
@@ -1006,6 +1502,23 @@ export class Player {
         el("div", "meta", "The orchestrator has no body. It only knows what sub-agents report back."),
       );
     }
+    // Points earned by this agent; losses belong to the team, not to an agent (SPEC §9.5).
+    box.append(el("h4", "", "Points"));
+    const mine = points.agents.get(agentId);
+    const pk = el("div", "kv");
+    const prow = (k: string, v: string) => pk.append(el("span", "", k), el("span", "", v));
+    const parts = mine
+      ? [
+          mine.evacuated ? `${mine.evacuated} evacuated` : "",
+          mine.extinguished ? `${mine.extinguished} fire${mine.extinguished === 1 ? "" : "s"} out` : "",
+        ].filter(Boolean)
+      : [];
+    prow("credited", mine ? `${fmtDelta(mine.points)} (${parts.join(", ")})` : "0");
+    prow(
+      "team losses",
+      `${points.lostCivilians} civilian${points.lostCivilians === 1 ? "" : "s"} (${fmtDelta(-20 * points.lostCivilians)}), ${points.lostHouses} house${points.lostHouses === 1 ? "" : "s"} (${fmtDelta(-5 * points.lostHouses)})`,
+    );
+    box.append(pk);
     const involving = w.messages
       .filter((m) => m.t_ms <= t && (m.from === agentId || m.to.includes(agentId)))
       .slice(-8);
@@ -1018,21 +1531,50 @@ export class Player {
     }
     if (inFlight) {
       box.append(el("h4", "", "Decision in progress"));
-      const elapsed = Math.max(0, t - inFlight.started_ms) / 1000;
       const notice = el("div", "decision-in-flight");
       notice.append(
-        el("b", "", `${elapsed.toFixed(1)}s elapsed`),
+        el("b", "", `${(Math.max(0, t - inFlight.started_ms) / 1000).toFixed(1)}s elapsed`),
         el(
           "span",
           "",
           a?.order_status === "active"
-            ? "The model is still responding. The body continues its current active order meanwhile."
-            : "The model is still responding. This body cannot choose new work until the response completes.",
+            ? "The body continues its current active order while the model responds."
+            : "The body awaits the model response before choosing new work.",
         ),
       );
       box.append(notice);
     }
-    box.append(el("h4", "", "Last decision"));
+    // Decisions, stepped through with ◀ / ▶ (SPEC §9.4).
+    const nav = el("h4", "decision-nav");
+    nav.append(document.createTextNode(pinned >= 0 ? "Decision " : "Last decision "));
+    if (decisions.length) {
+      const step = (d: number) => {
+        const target = decisions[Math.max(0, Math.min(decisions.length - 1, idx + d))];
+        if (!target) return;
+        this.selected = { world: w.id, agent: agentId, pin: target.id };
+        this.seek(target.ended_ms);
+        this.inspectorKey = "";
+      };
+      const prev = el("button", "", "◀");
+      prev.title = "Previous decision";
+      prev.disabled = idx <= 0;
+      prev.addEventListener("click", () => step(idx < 0 ? 1 : -1));
+      const next = el("button", "", "▶");
+      next.title = "Next decision";
+      next.disabled = idx >= decisions.length - 1;
+      next.addEventListener("click", () => step(1));
+      nav.append(prev, el("span", "", ` ${idx + 1} / ${decisions.length} `), next);
+      if (pinned >= 0) {
+        const latest = el("button", "", "latest");
+        latest.title = "Follow the agent's latest decision again";
+        latest.addEventListener("click", () => {
+          this.selected = { world: w.id, agent: agentId, pin: null };
+          this.inspectorKey = "";
+        });
+        nav.append(latest);
+      }
+    }
+    box.append(nav);
     if (!call) {
       box.append(el("div", "meta", w.team.startsWith("bots") ? "Scripted bot: no LLM." : "No decision yet."));
       return;
@@ -1041,7 +1583,7 @@ export class Player {
     const row = (k: string, v: string) => kv.append(el("span", "", k), el("span", "", v));
     row(
       "at",
-      `${(call.started_ms / 1000).toFixed(1)}s, took ${((call.latency_ms ?? call.ended_ms - call.started_ms) / 1000).toFixed(1)}s`,
+      `t${Math.floor(call.ended_ms / this.tl.tickMs)} · ${(call.started_ms / 1000).toFixed(1)}s, took ${((call.latency_ms ?? call.ended_ms - call.started_ms) / 1000).toFixed(1)}s`,
     );
     row("tokens", `${call.input_tokens} in · ${call.output_tokens} out`);
     row("cost", `$${call.cost_usd.toFixed(4)}${call.cost_estimated ? " (est.)" : ""}`);
@@ -1066,13 +1608,62 @@ export class Player {
     if (!call.prompt) void this.loadPrompt(call, pre);
   }
 
+  /** Every scoring event up to t, with running totals; click a line to seek (SPEC §9.5). */
+  private renderScoreLog(t: number) {
+    const w = this.tl.worlds.get(this.scoreLog!)!;
+    const log = this.tl.scoreLogAt(w, t);
+    const key = `score|${w.id}|${log.length}`;
+    if (key === this.inspectorKey) return;
+    this.inspectorKey = key;
+    const box = this.inspector;
+    box.replaceChildren();
+    const close = el("button", "close", "×");
+    close.addEventListener("click", () => this.closeInspector());
+    box.append(close, el("h3", "", `Score log · ${w.label}`));
+    box.append(
+      el(
+        "div",
+        "meta",
+        `Started at ${w.startScore}: +5 for each of ${w.startHouses} standing houses. +10 per evacuation, −20 per civilian lost, +1 per fire tile put out, −5 per house destroyed.`,
+      ),
+    );
+    const list = el("div", "score-log");
+    const icon: Record<ScoreEntry["type"], IconName> = {
+      civilian_evacuated: "civilian",
+      civilian_lost: "lost",
+      extinguished: "fire",
+      house_destroyed: "house",
+    };
+    const start = el("div", "score-line dim");
+    start.append(
+      el("span", "feed-tick", "t0"),
+      el("span", "score-text", "start"),
+      el("span", "score-total", `→ ${w.startScore}`),
+    );
+    list.append(start);
+    for (const e of log) {
+      const d = el("div", `score-line ${e.delta > 0 ? "gain" : "loss"}`);
+      d.append(
+        el("span", "feed-tick", `t${e.tick}`),
+        iconImg(icon[e.type], 14, { fg: e.delta > 0 ? "#7cfc9a" : "#ff4d6d" }),
+        el("span", "score-text", ` ${e.text}`),
+        el("span", "score-delta", fmtDelta(e.delta)),
+        el("span", "score-total", `→ ${e.total}`),
+      );
+      d.title = "Click to jump here";
+      d.addEventListener("click", () => this.seek(e.t_ms));
+      list.append(d);
+    }
+    box.append(list);
+    list.scrollTop = list.scrollHeight;
+  }
+
   private openBroadcast(c: Card) {
     const updates = this.tl.commentaryThrough(c.world, this.t);
     const dialog = this.broadcastDialog;
     dialog.replaceChildren();
     const close = el("button", "dialog-close", "×");
     close.type = "button";
-    close.setAttribute("aria-label", "Close broadcast transcript");
     close.addEventListener("click", () => dialog.close());
     dialog.append(close, el("div", "eyebrow", "AI broadcast"), el("h2", "", c.world.label));
     if (!updates.length) {
@@ -1080,8 +1671,8 @@ export class Player {
     } else {
       const transcript = el("div", "broadcast-transcript");
       updates.forEach((update, index) => {
-        const article = el("article", index === 0 ? "latest" : "");
-        article.append(el("h3", "", index === 0 ? "Latest update" : "Earlier update"));
+        const article = el("article", index === updates.length - 1 ? "latest" : "");
+        article.append(el("h3", "", index === updates.length - 1 ? "Latest update" : "Earlier update"));
         for (const paragraph of update.commentary.split(/\n\s*\n/).filter(Boolean))
           article.append(el("p", "", paragraph.trim()));
         transcript.append(article);
@@ -1091,38 +1682,14 @@ export class Player {
     dialog.showModal();
   }
 
-  private openMessages(c: Card) {
-    const messages = c.world.messages.filter((message) => message.t_ms <= this.t);
-    const dialog = this.messageDialog;
-    dialog.replaceChildren();
-    const close = el("button", "dialog-close", "×");
-    close.type = "button";
-    close.setAttribute("aria-label", "Close team transcript");
-    close.addEventListener("click", () => dialog.close());
-    dialog.append(close, el("div", "eyebrow", "Team messages"), el("h2", "", c.world.label));
-    if (!messages.length) {
-      dialog.append(el("p", "meta", "No messages have been sent by this team at the current replay time."));
-    } else {
-      const transcript = el("div", "message-transcript");
-      for (const message of messages) {
-        const tick = this.tl.frameAt(c.world, message.t_ms)?.tick ?? 0;
-        const recipient = message.to.join(", ") || message.channel;
-        const article = el("article");
-        article.append(
-          el("h3", "", `Tick ${tick} · ${message.from} → ${recipient}`),
-          el("p", "", message.text),
-        );
-        transcript.append(article);
-      }
-      dialog.append(transcript);
-    }
-    dialog.showModal();
-  }
-
   private async loadPrompt(call: LlmFrame, pre: HTMLElement) {
     const p = this.o.fetchPrompt ? await this.o.fetchPrompt(call.id) : null;
     pre.textContent = p ?? "(prompt not included in this recording)";
   }
+}
+
+function fmtDelta(n: number): string {
+  return n > 0 ? `+${n}` : n < 0 ? `−${-n}` : "0";
 }
 
 function esc(s: string): string {
