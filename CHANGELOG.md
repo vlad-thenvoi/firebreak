@@ -48,6 +48,8 @@ Notable Firebreak changes are recorded here. Recordings remain the source of tru
 - Split replay outcome markers into labelled communication-scenario rows and made the inspector show in-flight model decisions instead of presenting an old completed decision as current.
 - Fixed the civilian deadline symbol in the legend to use the same circular ring shape as the map overlay.
 - Increased the map size when a single team is visible so laptop replays use the available width instead of leaving a small centered board.
+- Simplified replay cards by removing the internal team key, repeated per-card role icons, and redundant miniature score charts; the labelled outcome chart remains the single time-series view.
+- Updated the global legend to render the current role icons, restored the orchestrator's `HQ` label, and explained role-coloured and blocked order-target lines.
 
 ### Fairness and security
 

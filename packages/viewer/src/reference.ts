@@ -1,12 +1,13 @@
 import { DEFAULT_GAME_CONFIG, ROLES, SCORE_VALUES, type Role, type TileKind } from "@firebreak/engine";
+import { ROLE_ICON, iconDataUrl, iconImg } from "./icons";
 import { ROLE_COLOR, TILE_COLOR } from "./render";
 import { createThemeToggle } from "./theme";
 
-const ROLE_MARKS: { mark: string; role: Role; name: string }[] = [
-  { mark: "S", role: "scout", name: "Scout" },
-  { mark: "F₁/F₂", role: "firefighter", name: "Firefighters" },
-  { mark: "E", role: "engineer", name: "Engineer" },
-  { mark: "R", role: "rescuer", name: "Rescuer" },
+const ROLE_MARKS: { role: Role; name: string }[] = [
+  { role: "scout", name: "Scout" },
+  { role: "firefighter", name: "Firefighters" },
+  { role: "engineer", name: "Engineer" },
+  { role: "rescuer", name: "Rescuer" },
 ];
 
 const TILES: { kind: TileKind; name: string }[] = [
@@ -22,8 +23,18 @@ const TILES: { kind: TileKind; name: string }[] = [
   { kind: "station", name: "Station" },
 ];
 
-function roleItem(mark: string, role: Role, name: string): string {
-  return `<div class="legend-item"><span class="role-mark" style="--mark:${ROLE_COLOR[role]}">${mark}</span><span><b>${name}</b></span></div>`;
+function roleIconsMarkup(role: Role): string {
+  const badges = role === "firefighter" ? ["1", "2"] : [undefined];
+  return `<span class="role-icons">${badges
+    .map(
+      (badge) =>
+        `<img src="${iconDataUrl(ROLE_ICON[role], ROLE_COLOR[role], "#1b1e2b", badge)}" alt="${role}${badge ? ` ${badge}` : ""}">`,
+    )
+    .join("")}</span>`;
+}
+
+function roleItem(role: Role, name: string): string {
+  return `<div class="legend-item">${roleIconsMarkup(role)}<span><b>${name}</b></span></div>`;
 }
 
 function tileItem(kind: TileKind, name: string): string {
@@ -32,7 +43,7 @@ function tileItem(kind: TileKind, name: string): string {
 
 function legendSections(): string {
   return `<section class="legend-section"><h3>Agents</h3><div class="legend-grid">
-    ${ROLE_MARKS.map((r) => roleItem(r.mark, r.role, r.name)).join("")}
+    ${ROLE_MARKS.map((r) => roleItem(r.role, r.name)).join("")}
     <div class="legend-item"><span class="role-mark hq-mark">HQ</span><span><b>Orchestrator</b> <small>no body</small></span></div>
   </div></section>
   <section class="legend-section"><h3>Map</h3><div class="legend-grid tile-grid">
@@ -42,7 +53,8 @@ function legendSections(): string {
     <div class="legend-item"><span class="effect-mark fire-mark">1–3</span><span>Fire intensity</span></div>
     <div class="legend-item"><span class="effect-mark civilian-mark">●</span><span>Civilian + deadline ring</span></div>
     <div class="legend-item"><span class="effect-mark message-mark">→</span><span>Message in flight</span></div>
-    <div class="legend-item"><span class="effect-mark order-mark">┄</span><span>Active order target</span></div>
+    <div class="legend-item"><span class="effect-mark order-mark">┄□</span><span>Active order: dashed line from agent to target</span></div>
+    <div class="legend-item"><span class="effect-mark order-mark order-blocked-mark">┄□</span><span>Blocked order target</span></div>
     <div class="legend-item"><span class="effect-mark fog-mark"></span><span>Outside current team vision</span></div>
   </div></section>`;
 }
@@ -51,10 +63,22 @@ export function compactRoleLegend(): HTMLElement {
   const node = document.createElement("div");
   node.className = "role-key";
   node.setAttribute("aria-label", "Agent map symbols");
-  node.innerHTML = ROLE_MARKS.map(
-    (r) =>
-      `<span title="${r.name}"><i style="--mark:${ROLE_COLOR[r.role]}">${r.mark}</i><span>${r.name}</span></span>`,
-  ).join("");
+  for (const item of ROLE_MARKS) {
+    const entry = document.createElement("span");
+    entry.title = item.name;
+    const badges = item.role === "firefighter" ? ["1", "2"] : [undefined];
+    for (const badge of badges)
+      entry.append(
+        iconImg(ROLE_ICON[item.role], 24, {
+          disc: ROLE_COLOR[item.role],
+          fg: "#1b1e2b",
+          ...(badge ? { badge } : {}),
+          title: badge ? `Firefighter ${badge}` : item.name,
+        }),
+      );
+    entry.append(document.createTextNode(item.name));
+    node.append(entry);
+  }
   return node;
 }
 
@@ -96,10 +120,10 @@ export function renderRulesPage(root: HTMLElement): void {
     </div></section>
 
     <section><h2>Agents</h2><div class="rules-table-wrap"><table><thead><tr><th>Map mark</th><th>Role</th><th>Speed</th><th>Vision</th><th>Capabilities</th></tr></thead><tbody>
-      <tr><td>${roleItem("S", "scout", "Scout")}</td><td>Scout</td><td>${ROLES.scout.speed} tiles/tick</td><td>${ROLES.scout.vision} tiles</td><td>Explores and uniquely receives the wind forecast.</td></tr>
-      <tr><td>${roleItem("F₁/F₂", "firefighter", "Firefighters")}</td><td>Two firefighters</td><td>${ROLES.firefighter.speed} tile/tick</td><td>${ROLES.firefighter.vision} tiles</td><td>Carry ${c.water_capacity} water. Intensity-3 fires require both firefighters on the same tick.</td></tr>
-      <tr><td>${roleItem("E", "engineer", "Engineer")}</td><td>Engineer</td><td>${ROLES.engineer.speed} tile/tick</td><td>${ROLES.engineer.vision} tiles</td><td>Clears debris in ${c.clear_debris_ticks} ticks and builds firebreaks.</td></tr>
-      <tr><td>${roleItem("R", "rescuer", "Rescuer")}</td><td>Rescuer</td><td>${ROLES.rescuer.speed} tiles/tick</td><td>${ROLES.rescuer.vision} tiles</td><td>Drives on roads and evacuates civilians.</td></tr>
+      <tr><td>${roleItem("scout", "Scout")}</td><td>Scout</td><td>${ROLES.scout.speed} tiles/tick</td><td>${ROLES.scout.vision} tiles</td><td>Explores and uniquely receives the wind forecast.</td></tr>
+      <tr><td>${roleItem("firefighter", "Firefighters")}</td><td>Two firefighters</td><td>${ROLES.firefighter.speed} tile/tick</td><td>${ROLES.firefighter.vision} tiles</td><td>Carry ${c.water_capacity} water. Intensity-3 fires require both firefighters on the same tick.</td></tr>
+      <tr><td>${roleItem("engineer", "Engineer")}</td><td>Engineer</td><td>${ROLES.engineer.speed} tile/tick</td><td>${ROLES.engineer.vision} tiles</td><td>Clears debris in ${c.clear_debris_ticks} ticks and builds firebreaks.</td></tr>
+      <tr><td>${roleItem("rescuer", "Rescuer")}</td><td>Rescuer</td><td>${ROLES.rescuer.speed} tiles/tick</td><td>${ROLES.rescuer.vision} tiles</td><td>Drives on roads and evacuates civilians.</td></tr>
     </tbody></table></div></section>
 
     <section><h2>World rules</h2><div class="rule-cards">

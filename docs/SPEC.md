@@ -344,7 +344,7 @@ A completed replay ends at its final simulation tick. The runner does not wake a
 
 ## 9. Viewer
 
-- **Layout:** a responsive grid of boards, one per team, each labelled with team name and live score. Column count follows available space, and visible cards keep corresponding sections aligned. The multi-metric comparison chart is a separate block below the grid.
+- **Layout:** a responsive grid of boards, one per team, each labelled once with its human-facing team name and live score. Column count follows available space, and visible cards keep corresponding sections aligned. The multi-metric comparison chart is a separate collapsible block below the grid.
 - **Board:** the tile map, fire intensity, agents as role icons (§9.3), civilians with countdown rings, and fog of war shaded by the team's combined vision.
 - **Message traffic:** messages drawn as lines between agents while in flight (hub-and-spoke for sub-agents, broadcast for a Slack channel, targeted for Band rooms).
 - **Mission and operational statistics:** civilians saved/lost, fires out/active, houses standing/destroyed, cost, model calls, messages, stale actions, idle ticks, and uncovered intensity-3 fire-ticks.
@@ -385,7 +385,7 @@ Shows the *shape* of a team's communication: who talks to whom, and how much.
 
 ### 9.3 Role icons
 
-Agents are drawn as role icons instead of lettered circles, so a viewer can tell who is who without a legend.
+Agents are drawn as role icons instead of lettered circles. One global legend uses the exact same icons; cards do not repeat it.
 
 | Role | Icon |
 |---|---|
@@ -399,7 +399,7 @@ Agents are drawn as role icons instead of lettered circles, so a viewer can tell
 - **Role colour stays.** The icon sits on a disc in the existing role colour, so colour and shape both identify the role (colour alone fails for colour-blind viewers).
 - **State stays visible:** the white ring when selected, the red ring when the order is blocked, and the firefighter's water pips under the icon, as today.
 - **Readable at small sizes.** Icons are simple silhouettes that still read at the smallest board size in the 3×2 layout (about 14 px). Each icon is rasterised once per size to an offscreen canvas, not re-traced every frame.
-- **Same icons everywhere:** the board, the communication graph nodes (§9.1), feed lines (§9.2, §9.4), the inspector header, and a small role legend in the card header.
+- **Same icons everywhere:** the board, the communication graph nodes (§9.1), feed lines (§9.2, §9.4), inspector header, and global viewer legend. The bodyless orchestrator is labelled `HQ` rather than using a role-shaped icon.
 - Civilians get a person icon in place of the plain dot; the countdown ring stays.
 
 ### 9.4 Agent actions (tool calls)
@@ -430,7 +430,7 @@ The score must be explainable at a glance: what it's made of, what changed it, a
 - **Starting score:** a small `started at 50 (10 houses)` note, so a score that drops from 50 at tick 0 isn't a surprise (§4.6).
 - **Event pop-ups:** when a scoring event happens, a floating label naming **what happened** rises from its tile on the board (green for gains, red for losses) and fades within about a tick of game time: `Civilian evacuated` (`civilian_evacuated`), `Civilian lost` (`civilian_lost`), `Fire put out` (`extinguished`), `House destroyed` (`house_destroyed`). The label says the event, not the points; the points are in the score log and breakdown chips. Labels are short so they stay readable at the smallest board size; overlapping pop-ups on the same tile or tick stack vertically instead of drawing on top of each other. The card's score briefly flashes the same colour.
 - **Score log:** clicking the score opens a list of every scoring event up to `t`: tick, event, delta, who it's credited to, and the running total (e.g. `t23  🧍 c2 evacuated by R  +10  → 62`). Clicking a line seeks to it. Built from the engine events in §4.6, so it always matches the total.
-- **Score chart:** a small line chart per team, score over ticks, with a dot per scoring event (hover shows the event). In the multi-team layout, a shared chart with one line per team, in team colours, on a shared y-axis, shows where teams diverged.
+- **Outcome chart:** one labelled, collapsible chart below the cards shows score or another selected outcome over ticks, with one line per selected team on a shared y-axis. Cards keep only the score breakdown and clickable score log; unexplained miniature charts are intentionally omitted.
 - **Per-agent points:** the inspector shows the points credited to that agent (evacuations to the rescuer, extinguishes to each firefighter in `by`). Losses (civilians, houses) are the team's and are shown separately, not blamed on an agent.
 
 ## 10. Metrics

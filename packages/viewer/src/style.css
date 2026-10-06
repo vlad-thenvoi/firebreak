@@ -126,6 +126,12 @@ select {
   gap: 4px;
   white-space: nowrap;
 }
+.role-key img {
+  display: block;
+}
+.role-key img + img {
+  margin-left: -5px;
+}
 .role-key i,
 .role-mark {
   display: inline-flex;
@@ -1214,6 +1220,23 @@ a {
   background: transparent;
   border-style: dashed;
 }
+.order-blocked-mark {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.role-icons {
+  display: inline-flex;
+  align-items: center;
+  min-width: 27px;
+}
+.role-icons img {
+  display: block;
+  width: 27px;
+  height: 27px;
+}
+.role-icons img + img {
+  margin-left: -6px;
+}
 .fog-mark {
   background: rgba(10, 12, 20, 0.82);
 }
@@ -1516,29 +1539,11 @@ a {
 .chip-total {
   color: var(--text);
 }
-.spark-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 22px;
-}
 .started {
+  display: block;
+  margin-top: 2px;
   white-space: nowrap;
   cursor: help;
-}
-.spark {
-  flex: 1;
-  min-width: 40px;
-  height: 22px;
-  cursor: crosshair;
-}
-.score-chart {
-  width: 220px;
-  height: 34px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: crosshair;
 }
 .score-log {
   font-size: 12px;

@@ -52,7 +52,6 @@ interface Card {
   score: HTMLElement;
   chips: HTMLElement;
   started: HTMLElement;
-  spark: HTMLCanvasElement;
   scorebar: HTMLElement;
   outcomes: HTMLElement;
   counters: HTMLElement;
@@ -134,7 +133,6 @@ export class Player {
   private feedBtns: HTMLButtonElement[] = [];
   private hideDone = false;
   private orderLines = true;
-  private chart!: HTMLCanvasElement;
   private legendDialog!: HTMLDialogElement;
   private broadcastDialog!: HTMLDialogElement;
   private subagentDialog!: HTMLDialogElement;
@@ -230,8 +228,9 @@ export class Player {
       doneBtn.classList.toggle("on", !this.hideDone);
       this.syncFeeds();
     });
-    const linesBtn = el("button", "on", "order lines");
-    linesBtn.title = "Draw each agent's current order as a dashed line to its target (red when blocked)";
+    const linesBtn = el("button", "on", "order targets");
+    linesBtn.title =
+      "Show a role-coloured dashed line from each agent to its current target; red means the order is blocked";
     linesBtn.addEventListener("click", () => {
       this.orderLines = !this.orderLines;
       linesBtn.classList.toggle("on", this.orderLines);
@@ -271,16 +270,13 @@ export class Player {
       const label = el("div", "label");
       const swatch = el("span", "swatch");
       swatch.style.background = color;
-      swatch.title = "This team's line in the score chart";
+      swatch.title = "This team's colour in the outcome chart";
       label.append(swatch, document.createTextNode(w.label));
-      head.append(label, el("div", "team", w.team), this.legend(w), score);
+      head.append(label, score);
       const scorebar = el("div", "scorebar");
       const chips = el("div", "chips");
       const started = el("span", "started");
-      const spark = el("canvas", "spark");
-      const sparkRow = el("div", "spark-row");
-      sparkRow.append(started, spark);
-      scorebar.append(chips, sparkRow);
+      scorebar.append(chips, started);
       const wrap = el("div", "board-wrap");
       const canvas = el("canvas");
       const graph = el("canvas", "graph");
@@ -321,7 +317,6 @@ export class Player {
         score,
         chips,
         started,
-        spark,
         scorebar,
         outcomes,
         counters,
@@ -349,7 +344,6 @@ export class Player {
         e.stopPropagation();
         this.openScoreLog(c);
       });
-      spark.addEventListener("mousemove", (e) => this.onSparkHover(c, e));
       graph.addEventListener("click", (e) => this.onGraphClick(c, e));
       graph.addEventListener("mousemove", (e) => this.onGraphHover(c, e));
       graph.addEventListener("mouseleave", () => {
@@ -402,11 +396,7 @@ export class Player {
     });
     scrubWrap.append(this.scrubMarks, this.scrub);
     this.clockEl = el("div", "clock");
-    this.chart = el("canvas", "score-chart");
-    this.chart.title = "Score over the match, one line per team (colours as in the card headers)";
-    this.chart.addEventListener("mousemove", (e) => this.onChartHover(e));
     controls.append(scrubWrap, this.clockEl);
-    if (this.tl.worlds.size > 1) controls.append(this.chart);
     this.timelineTeamKey = el("div", "timeline-team-key");
     const timelineKey = el("div", "timeline-key");
     for (const { color, label } of Object.values(TIMELINE_MARKERS)) {
@@ -728,14 +718,6 @@ export class Player {
       c.canvas.parentElement!.style.display = view === "graph" ? "none" : "";
       c.graph.style.display = view === "board" ? "none" : "";
     }
-    for (const c of this.cards) {
-      const r = c.spark.getBoundingClientRect();
-      c.spark.width = Math.round(r.width * dpr);
-      c.spark.height = Math.round(r.height * dpr);
-    }
-    const cr = this.chart.getBoundingClientRect();
-    this.chart.width = Math.round(cr.width * dpr);
-    this.chart.height = Math.round(cr.height * dpr);
     const r = this.scrubMarks.getBoundingClientRect();
     this.scrubMarks.width = Math.round(r.width * dpr);
     this.scrubMarks.height = Math.round(r.height * dpr);
@@ -794,28 +776,6 @@ export class Player {
   private syncFeeds() {
     this.feedBtns.forEach((b, i) => b.classList.toggle("on", FEED_MODES[i] === this.feedMode));
     for (const c of this.cards) c.feed.setMode(this.feedMode, this.hideDone);
-  }
-
-  /** Role icons for the card header, so the board reads without a key (SPEC §9.3). */
-  private legend(w: WorldTimeline): HTMLElement {
-    const box = el("div", "legend");
-    const ids =
-      w.team === "subagents"
-        ? ["scout", "ff1", "ff2", "engineer", "rescuer", HQ_ID]
-        : ["scout", "ff1", "ff2", "engineer", "rescuer"];
-    for (const id of ids) {
-      const img = agentIcon(id, 15);
-      img.title =
-        id === HQ_ID
-          ? "orchestrator (HQ)"
-          : id === "scout"
-            ? "scout"
-            : id.startsWith("ff")
-              ? `firefighter ${id}`
-              : id;
-      box.append(img);
-    }
-    return box;
   }
 
   private setExpanded(on: boolean) {
@@ -1042,7 +1002,6 @@ export class Player {
       if (ended) this.renderResults(c, f.cur.score);
     }
     for (const c of this.cards) c.root.classList.toggle("leader", c === leader && this.cards.length > 1);
-    this.renderChart(shown, t);
     const secs = (t / 1000).toFixed(1);
     this.clockEl.textContent = `tick ${tickShown} / ${this.tl.header.ticks} · ${secs}s · ${this.speed}×`;
     this.drawMarks();
@@ -1062,7 +1021,6 @@ export class Player {
     }
     c.lastScore = total;
     if (f) this.renderBreakdown(c, f.cur.score);
-    this.renderSpark(c, t, tick);
     const k = this.tl.counters(c.world, t, tick);
     const counter = (v: string | number, label: string) =>
       `<div class="counter"><b>${v}</b><span>${label}</span></div>`;
@@ -1199,63 +1157,6 @@ export class Player {
     return out;
   }
 
-  /** Scores per tick for a world, up to the tick shown. */
-  private scoresUpTo(w: WorldTimeline, tick: number): number[] {
-    const out: number[] = [];
-    for (let i = 0; i <= tick && i < w.ticks.length; i++) {
-      const f = w.ticks[i];
-      out.push(f ? f.state.score.total : (out.at(-1) ?? w.startScore));
-    }
-    return out;
-  }
-
-  private range = { version: -1, min: 0, max: 0 };
-
-  /** Shared y range of every score chart, recomputed only when frames arrive. */
-  private scoreRange(ws: WorldTimeline[]): { min: number; max: number } {
-    if (this.range.version === this.tl.version) return this.range;
-    let min = 0;
-    let max = 0;
-    for (const w of ws)
-      for (const f of w.ticks) {
-        if (!f) continue;
-        min = Math.min(min, f.state.score.total);
-        max = Math.max(max, f.state.score.total);
-      }
-    this.range = { version: this.tl.version, min, max: Math.max(max, min + 10) };
-    return this.range;
-  }
-
-  private renderSpark(c: Card, t: number, tick: number) {
-    if (!c.spark.width) return;
-    const dpr = c.spark.width / Math.max(1, c.spark.clientWidth);
-    const range = this.scoreRange(this.cards.map((x) => x.world));
-    const f = this.tl.frameAt(c.world, t);
-    drawChart(c.spark, {
-      lines: [
-        { color: c.color, scores: this.scoresUpTo(c.world, tick), events: this.tl.scoreLogAt(c.world, t) },
-      ],
-      ticks: this.tl.header.ticks,
-      ...range,
-      at: tick + (f?.alpha ?? 0),
-      dpr,
-    });
-  }
-
-  /** The shared all-teams chart in the controls: where the teams diverged (SPEC §9.5). */
-  private renderChart(shown: Card[], t: number) {
-    if (!this.chart.width || this.tl.worlds.size < 2) return;
-    const dpr = this.chart.width / Math.max(1, this.chart.clientWidth);
-    const range = this.scoreRange(this.cards.map((x) => x.world));
-    let at = 0;
-    const lines = shown.map((c) => {
-      const f = this.tl.frameAt(c.world, t);
-      at = Math.max(at, (f?.tick ?? 0) + (f?.alpha ?? 0));
-      return { color: c.color, scores: this.scoresUpTo(c.world, f?.tick ?? 0) };
-    });
-    drawChart(this.chart, { lines, ticks: this.tl.header.ticks, ...range, at, dpr });
-  }
-
   private drawOutcomeChart() {
     if (!this.chartCanvas || !this.chartValues) return;
     const rect = this.chartCanvas.getBoundingClientRect();
@@ -1313,38 +1214,6 @@ export class Player {
       chip.append(swatch, document.createTextNode(`${card.world.label}: ${snapshot[this.chartMetric]}`));
       this.chartValues.append(chip);
     }
-  }
-
-  private tickAtX(cv: HTMLCanvasElement, e: MouseEvent): number {
-    const r = cv.getBoundingClientRect();
-    const pad = 3;
-    const f = (e.clientX - r.left - pad) / Math.max(1, r.width - 2 * pad);
-    return Math.max(0, Math.min(this.tl.header.ticks, Math.round(f * this.tl.header.ticks)));
-  }
-
-  private onSparkHover(c: Card, e: MouseEvent) {
-    const tick = this.tickAtX(c.spark, e);
-    const log = this.tl.scoreLogAt(c.world, this.t);
-    let best: ScoreEntry | null = null;
-    for (const x of log) if (!best || Math.abs(x.tick - tick) < Math.abs(best.tick - tick)) best = x;
-    const score = c.world.ticks[Math.min(tick, c.world.ticks.length - 1)]?.state.score.total;
-    c.spark.title =
-      best && Math.abs(best.tick - tick) <= 1
-        ? `t${best.tick} ${best.text} ${fmtDelta(best.delta)} → ${best.total}`
-        : score !== undefined
-          ? `t${tick}: ${score}`
-          : "";
-  }
-
-  private onChartHover(e: MouseEvent) {
-    const tick = this.tickAtX(this.chart, e);
-    const parts = this.cards
-      .filter((c) => c.visible)
-      .map(
-        (c) =>
-          `${c.world.label} ${c.world.ticks[Math.min(tick, c.world.ticks.length - 1)]?.state.score.total ?? "–"}`,
-      );
-    this.chart.title = `t${tick}: ${parts.join(" · ")}`;
   }
 
   /** End of match: the final score and the chips that explain it (SPEC §9.5). */

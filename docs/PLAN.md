@@ -22,9 +22,9 @@ Sizes: **S** ≈ 1 day, **M** ≈ 2–3 days, **L** ≈ 1 week.
 | M9 Demo polish | done | `export`, focus-on-one-team mode, 2×2 layout; showcase: `showcase/seed-11-four-teams.html` |
 | M9a Expandable message feed | done | `feed.ts`: 3 lines collapsed, 10 expanded; incremental, follow-newest, click to seek |
 | M9b Communication graph | done | `graph.ts`, `?view=board\|graph\|both`; `communicationMatrix` in `recorder`, matrix and concentration in `report`; showcases regenerated |
-| M9c Role icons | done | `icons.ts`: SVG paths as `Path2D`, cached bitmaps; board, graph, feed, inspector, card legend; same render in Chromium, Firefox, WebKit; no 10× frame-time change |
+| M9c Role icons | done | `icons.ts`: SVG paths as `Path2D`, cached bitmaps; board, graph, feed, inspector, global legend; same render in Chromium, Firefox, WebKit; no 10× frame-time change |
 | M9d Agent actions feed | done | `?feed=messages\|actions\|all`; actions from `llm` tool calls + `order_done`/`order_blocked` (bots: `order_issued`); agent filter; inspector pins a decision, ◀ / ▶; order lines + hover label |
-| M9e Score explanation | done | score log in `timeline` (test: matches `tick_state` on every tick of every committed recording), chips, pop-ups, log, sparkline + shared chart, per-agent points |
+| M9e Score explanation | done | score log in `timeline` (test: matches `tick_state` on every tick of every committed recording), chips, pop-ups, log, one labelled outcome chart, per-agent points |
 | M9f Viewer fixes | done | one expand state for every feed; pop-ups name the event (`SCORE_LABEL`, shared with the score log) and stack (`stackLabels`); layout fits the expanded feeds, then drops feed lines, then scrolls the boards area in the grid that hides the least |
 | M9g Replay commentator | done | omniscient post-match broadcast, persisted sidecars, automatic historical generation |
 | M9h Replay comparison | done | responsive mission/operational stats, per-team timeline lanes, multi-metric outcome chart, persistent panel and Dark/Light preferences |
@@ -161,7 +161,7 @@ Also viewer-only. Everything needed is already in the recording: tool calls in `
 ### M9c: Role icons (S)
 - `packages/viewer/src/icons.ts`: one SVG path per role, HQ and civilian (§9.3), as `Path2D`, with a per-size offscreen-canvas cache.
 - `drawAgent` in `render.ts`: role-colour disc + icon in place of the letter; keep the selected / blocked rings and water pips; FF1/FF2 number badge.
-- Use the same icons for graph nodes (`graph.ts`), the inspector header, feed lines, and a role legend in the card header.
+- Use the same icons for graph nodes (`graph.ts`), the inspector header, feed lines, and the global role legend. Label the bodyless orchestrator `HQ`.
 - Civilian person icon in place of the dot, keeping the countdown ring.
 
 **Done when:** on the seed-11 showcase in the 3×2 layout, every role is recognisable without the legend at the smallest board size, the exported HTML looks the same in Chrome, Safari and Firefox, and 10× playback frame time doesn't regress.
@@ -180,7 +180,7 @@ Also viewer-only. Everything needed is already in the recording: tool calls in `
 - `timeline`: a per-world score log from the scoring events (§4.6 table), with delta, credited agent and running total; a test that the running total equals `tick_state.score.total` on every tick of the committed recordings.
 - Card: breakdown chips under the score, "started at N" note, score flash; click the score to open the log (click a line to seek).
 - Board: floating score pop-ups at the event's tile.
-- Score chart: small per-card sparkline, and a shared all-teams chart in the controls area (Canvas 2D, same style as the graph).
+- Outcome chart: one labelled, collapsible all-teams chart below the cards. Do not repeat unexplained sparklines or a second miniature chart.
 - Inspector: per-agent points and the team's losses.
 
 **Done when:** on the seed-11 showcase, the breakdown always adds up to the shown score, every score change has a pop-up and a log line explaining it, the chart shows where the teams diverged, and someone who hasn't seen the rules can explain a final score from the card alone.
